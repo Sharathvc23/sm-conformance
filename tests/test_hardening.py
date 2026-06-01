@@ -1,0 +1,162 @@
+"""0.2.0 hardening: honest canonicalization, load-bearing schema, count gate.
+
+Covers the verify-path enforcement that 0.1.0 left decorative — see SPEC.md
+§6 (JCS + value-space), §9 (schema validation + vector accounting), §12.1.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import tempfile
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from sm_conformance.badge import (
+    CanonicalizationError,
+    VerificationError,
+    canonical_json,
+    derive_did_key,
+    sign_envelope,
+    verify_envelope,
+)
+from sm_conformance.countersign import CountersignError, counter_sign, verify_countersigned
+from sm_conformance.verify_badge import main as verify_badge_main
+
+SIGNED_AT = "2026-06-01T00:00:00+00:00"
+
+
+def _seed() -> bytes:
+    return Ed25519PrivateKey.generate().private_bytes_raw()
+
+
+def _payload(**over: Any) -> dict[str, Any]:
+    p: dict[str, Any] = {
+        "schema_version": 1,
+        "runtime": "sm-test",
+        "protocol_versions": ["0.3"],
+        "suite_digest": "sha256:" + "a" * 64,
+        "completed_at": SIGNED_AT,
+        "exit_status": 0,
+        "passed": 46,
+        "failed": 0,
+        "skipped": 1,
+        "xfailed": 0,
+        "xpassed": 0,
+        "total_vectors": 47,
+    }
+    p.update(over)
+    return p
+
+
+def _badge_file(envelope: dict[str, Any]) -> Iterator[str]:
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tmp:
+        json.dump(envelope, tmp)
+        path = tmp.name
+    try:
+        yield path
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+# --- #1 canonicalization is honest (JCS + value-space reject) ----------------
+
+
+def test_canonical_json_rejects_float() -> None:
+    with pytest.raises(CanonicalizationError, match="uncanonicalizable"):
+        canonical_json(_payload(passed=1.5))
+
+
+def test_canonical_json_rejects_non_ascii_string() -> None:
+    with pytest.raises(CanonicalizationError, match="non-ASCII"):
+        canonical_json(_payload(runtime="café"))
+
+
+def test_canonical_json_rejects_bytes_value() -> None:
+    with pytest.raises(CanonicalizationError):
+        canonical_json({"k": b"\x00\x01"})
+
+
+def test_canonical_json_is_key_order_independent_jcs() -> None:
+    assert canonical_json({"b": 1, "a": 2}) == canonical_json({"a": 2, "b": 1}) == b'{"a":2,"b":1}'
+
+
+# --- #2 schema validation is load-bearing on the verify path -----------------
+
+
+def test_verify_rejects_schema_invalid_payload_despite_valid_signature() -> None:
+    # runtime violates ^[a-z0-9-]+$ but is ASCII (canonicalizable), so it signs fine.
+    env = sign_envelope(_payload(runtime="Bad_Upper"), _seed(), SIGNED_AT)
+    with pytest.raises(VerificationError, match="schema validation"):
+        verify_envelope(env)
+
+
+def test_verify_rejects_negative_count_despite_valid_signature() -> None:
+    env = sign_envelope(_payload(passed=-1), _seed(), SIGNED_AT)
+    with pytest.raises(VerificationError, match="schema validation"):
+        verify_envelope(env)
+
+
+def test_verify_accepts_well_formed_badge() -> None:
+    env = sign_envelope(_payload(), _seed(), SIGNED_AT)
+    assert verify_envelope(env)["runtime"] == "sm-test"
+
+
+# --- #2 rung-2 counter-signed path is hardened the same way ------------------
+
+
+def _manual_countersign(badge: dict[str, Any], lab_seed: bytes, method: str) -> dict[str, Any]:
+    """Like counter_sign but bypasses its method check, to forge a schema-invalid
+    yet validly-signed envelope — the only way to reach the outer schema gate."""
+    payload = {"schema_version": 1, "badge": badge, "method": method}
+    priv = Ed25519PrivateKey.from_private_bytes(lab_seed)
+    sig = priv.sign(canonical_json(payload))
+    return {
+        "payload": payload,
+        "countersigned_by": derive_did_key(priv.public_key().public_bytes_raw()),
+        "countersigned_at": SIGNED_AT,
+        "countersignature": base64.b64encode(sig).decode(),
+    }
+
+
+def test_countersign_round_trip_still_verifies() -> None:
+    badge = sign_envelope(_payload(), _seed(), SIGNED_AT)
+    cs = counter_sign(badge, _seed(), SIGNED_AT, method="lab-rerun")
+    assert verify_countersigned(cs)["runtime"] == "sm-test"
+
+
+def test_countersign_verify_rejects_schema_invalid_method() -> None:
+    badge = sign_envelope(_payload(), _seed(), SIGNED_AT)
+    forged = _manual_countersign(badge, _seed(), method="not-a-method")
+    with pytest.raises(CountersignError, match="schema validation"):
+        verify_countersigned(forged)
+
+
+# --- #3 the count gate (CLI) -------------------------------------------------
+
+
+def test_cli_rejects_accounting_mismatch() -> None:
+    # total_vectors says 99 but counts sum to 47 — an incomplete run.
+    env = sign_envelope(_payload(total_vectors=99), _seed(), SIGNED_AT)
+    for path in _badge_file(env):
+        assert verify_badge_main([path]) == 1
+
+
+def test_cli_expected_total_vectors_mismatch_rejected() -> None:
+    env = sign_envelope(_payload(), _seed(), SIGNED_AT)  # total_vectors=47
+    for path in _badge_file(env):
+        assert verify_badge_main([path, "--expected-total-vectors", "63"]) == 1
+        assert verify_badge_main([path, "--expected-total-vectors", "47"]) == 0
+
+
+def test_cli_require_total_vectors_when_absent_rejected() -> None:
+    payload = _payload()
+    del payload["total_vectors"]
+    env = sign_envelope(payload, _seed(), SIGNED_AT)
+    for path in _badge_file(env):
+        assert verify_badge_main([path]) == 0  # absent is fine by default
+        assert verify_badge_main([path, "--require-total-vectors"]) == 1

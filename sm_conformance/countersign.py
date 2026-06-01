@@ -38,17 +38,20 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
+from jsonschema.exceptions import ValidationError
 
 from sm_conformance.badge import (
     VerificationError,
     canonical_json,
     derive_did_key,
+    make_validator,
     parse_did_key,
     verify_envelope,
 )
 
 COUNTERSIGN_SCHEMA_VERSION = 1
 _METHODS = ("lab-rerun", "verified")
+_COUNTERSIGN_VALIDATOR = make_validator("counter-signed-envelope.schema.json")
 
 
 class CountersignError(Exception):
@@ -124,6 +127,15 @@ def verify_countersigned(envelope: dict[str, Any]) -> dict[str, Any]:
         Ed25519PublicKey.from_public_bytes(lab_pubkey).verify(sig, canonical_json(payload))
     except InvalidSignature as exc:
         raise CountersignError("counter-signature verification failed") from exc
+
+    # Both signatures authentic — now enforce the wrapping envelope is well-formed
+    # (rung-2 gets the same load-bearing schema check as rung-1; SPEC.md §12.1).
+    try:
+        _COUNTERSIGN_VALIDATOR.validate(envelope)
+    except ValidationError as exc:
+        raise CountersignError(
+            f"counter-signed envelope failed schema validation: {exc.message}"
+        ) from exc
 
     return inner_payload
 
