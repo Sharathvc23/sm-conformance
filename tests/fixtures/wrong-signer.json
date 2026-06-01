@@ -1,0 +1,33 @@
+{
+  "id": "wrong-signer",
+  "description": "signed_by replaced with an unrelated runtime DID after signing.",
+  "spec_ref": "conformance.md \u00a79.5",
+  "expected_outcome": "signature_fail",
+  "verifier_options": {
+    "allow_failures": false
+  },
+  "private_keys": {
+    "runtime": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "wrong_runtime": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8="
+  },
+  "envelope": {
+    "payload": {
+      "schema_version": 1,
+      "runtime": "spec-reference",
+      "protocol_versions": [
+        "0.3"
+      ],
+      "suite_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "completed_at": "2026-05-30T12:00:00+00:00",
+      "exit_status": 0,
+      "passed": 46,
+      "failed": 0,
+      "skipped": 1,
+      "xfailed": 0,
+      "xpassed": 0
+    },
+    "signed_by": "did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2",
+    "signed_at": "2026-05-30T12:00:00+00:00",
+    "signature": "7LTacnhlDJp/qyl0+G/A0/i1LWgwMCs6gbyRCYg1u9eH9p3GXr1eINPbvheDYrjzWq3c9PLm8FG8t3sges8XDw=="
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "id": "missing-signature",
+  "description": "signature field absent \u2014 envelope shape check fails.",
+  "spec_ref": "conformance.md \u00a79.1",
+  "expected_outcome": "envelope_shape_fail",
+  "verifier_options": {
+    "allow_failures": false
+  },
+  "private_keys": {
+    "runtime": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+  },
+  "envelope": {
+    "payload": {
+      "schema_version": 1,
+      "runtime": "spec-reference",
+      "protocol_versions": [
+        "0.3"
+      ],
+      "suite_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "completed_at": "2026-05-30T12:00:00+00:00",
+      "exit_status": 0,
+      "passed": 46,
+      "failed": 0,
+      "skipped": 1,
+      "xfailed": 0,
+      "xpassed": 0
+    },
+    "signed_by": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+    "signed_at": "2026-05-30T12:00:00+00:00"
+  }
+}

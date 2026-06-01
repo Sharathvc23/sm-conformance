@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stellarminds.ai/schemas/sm-conformance/0.1/common.schema.json",
+  "title": "sm-conformance Common Definitions",
+  "description": "Shared definitions referenced via $ref from the conformance-envelope schema.",
+  "$defs": {
+    "didKey": {
+      "type": "string",
+      "pattern": "^did:key:z[1-9A-HJ-NP-Za-km-z]{32,}$",
+      "description": "did:key identifier per the W3C did:key method (multibase base58btc over multicodec 0xed01 || Ed25519 pubkey32). The leading 'z' indicates base58btc."
+    },
+    "base64Ed25519Signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]{86}==$",
+      "description": "Base64-encoded 64-byte Ed25519 signature with padding (88 chars total)."
+    },
+    "sha256Hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 hash with the 'sha256:' prefix and lowercase hex digest."
+    },
+    "extensionsObject": {
+      "type": "object",
+      "description": "Forward-compatible additions. Keys MUST be namespace-prefixed (<domain>.<sub>.<field>).",
+      "patternProperties": {
+        "^[a-z0-9-]+(\\.[a-z0-9-]+)+\\.[a-zA-Z0-9_-]+$": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}
