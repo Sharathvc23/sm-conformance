@@ -11,30 +11,34 @@ no trust-me. This package owns exactly that envelope: building it, signing it,
 pinning it, and verifying it. It does **not** define your protocol's tests — you
 bring those.
 
-## What this package secures (v0.1)
+## What this package secures (v0.2)
 
 - **Offline-verifiable attestation.** A badge is an Ed25519 signature over an
-  RFC 8785-style canonical JSON payload; verification needs only the embedded
-  `did:key` and `cryptography` — no network, no proprietary service.
+  RFC 8785 (JCS) canonical JSON payload, with the signed value space constrained
+  to ASCII strings, integers, booleans, and null so two implementations cannot
+  diverge; verification needs only the embedded `did:key` and `cryptography` — no
+  network, no proprietary service.
+- **Load-bearing structure.** `verify_envelope` validates the payload against the
+  JSON Schema *on the verify path* — a malformed-but-signed badge is rejected, not
+  merely flagged in a test.
 - **Corpus pinning.** `suite_digest` is a SHA-256 over the vector corpus, so a
   badge proves *which* suite ran; swapping in a weaker corpus changes the digest.
 - **Honest gating.** The verifier refuses a badge that records `failed > 0` or a
   non-zero exit status unless you explicitly opt into signature-only mode.
 - **Adversarially tested.** Tampered payloads, tampered signatures, wrong signer,
   non-`did:key` signer, missing fields, and pass-gate evasion are all covered by
-  golden vectors and unit tests (40 tests).
+  golden vectors and unit tests (74 tests).
 
-## What this package does NOT (yet) do
+## What this package does NOT do
 
 - **Run your tests.** It attests *the result* of a suite; wiring a suite (and the
   adapter that plugs a runtime in) is the consumer's responsibility — see the
   reference example.
-- **Establish third-party trust.** A self-signed badge is a *claim*. The
-  self → lab-counter-signed → attested-CI trust ladder is specified in
-  [`SPEC.md`](./SPEC.md) §11 but the counter-sign/attestation tooling is a v0.2
-  property.
-- **Canonicalize non-ASCII / floating-point payloads** to full RFC 8785 JCS — the
-  current encoding is byte-identical to JCS for ASCII payloads only (SPEC §6).
+- **Prove a self-signed run happened.** A rung-1 badge is a *claim* by the key
+  holder; its `total_vectors` is self-attested and catches only an honest partial
+  run. Closing under-execution against an adversarial signer is what
+  `--expected-total-vectors` (a count the verifier knows independently) and rung-2
+  lab counter-signing are for — both shipped, see [`SPEC.md`](./SPEC.md) §9, §11.
 
 ## Features
 
@@ -43,7 +47,8 @@ bring those.
 - `derive_did_key` / `parse_did_key` — W3C `did:key` (base58btc, multicodec `0xed01`).
 - `run_extensions(surface, target)` — optional, namespaced run provenance.
 - `sm-verify-badge` CLI (`python -m sm_conformance.verify_badge`).
-- JSON Schemas for the envelope (`sm_conformance/schema/`), validated in tests.
+- JSON Schemas for the envelope + counter-signed envelope (`sm_conformance/schema/`),
+  enforced on the verify path.
 
 ## Installation
 

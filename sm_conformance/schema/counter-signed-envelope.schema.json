@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stellarminds.ai/schemas/sm-conformance/0.1/counter-signed-envelope.schema.json",
+  "title": "Counter-Signed Conformance Badge Envelope",
+  "description": "A neutral lab's counter-signature (trust-ladder rung 2) wrapping a runtime's signed badge. See SPEC.md §12.",
+  "type": "object",
+  "required": ["payload", "countersigned_by", "countersigned_at", "countersignature"],
+  "additionalProperties": false,
+  "properties": {
+    "payload": {
+      "type": "object",
+      "title": "Counter-Signed Payload",
+      "description": "What the lab's countersignature commits to: the exact inner badge plus the attestation method.",
+      "required": ["schema_version", "badge", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1,
+          "description": "Counter-signed payload schema version. Bound to SPEC.md §12."
+        },
+        "badge": {
+          "$ref": "conformance-envelope.schema.json",
+          "description": "The runtime's own signed badge, unaltered."
+        },
+        "method": {
+          "type": "string",
+          "enum": ["verified", "lab-rerun"],
+          "description": "verified = lab confirmed the inner signature and counts only; lab-rerun = lab re-ran the suite (§12)."
+        }
+      }
+    },
+    "countersigned_by": { "$ref": "common.schema.json#/$defs/didKey" },
+    "countersigned_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|\\+00:00)$",
+      "description": "RFC 3339 timestamp in UTC."
+    },
+    "countersignature": { "$ref": "common.schema.json#/$defs/base64Ed25519Signature" }
+  }
+}

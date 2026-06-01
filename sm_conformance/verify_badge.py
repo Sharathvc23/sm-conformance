@@ -37,6 +37,23 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional: assert the badge pins to this suite_digest (format: sha256:<hex>).",
     )
     parser.add_argument(
+        "--expected-total-vectors",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Optional: assert the badge's total_vectors equals N — the count a relying "
+            "party knows for this suite_digest. This is the real under-execution check; "
+            "the in-band total_vectors is self-attested and only catches honest partial runs."
+        ),
+    )
+    parser.add_argument(
+        "--require-total-vectors",
+        action="store_true",
+        default=False,
+        help="Fail unless the badge declares total_vectors.",
+    )
+    parser.add_argument(
         "--allow-failures",
         action="store_true",
         default=False,
@@ -91,6 +108,36 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
+
+    # Vector accounting (§9). total_vectors is self-attested: when present, the
+    # counts MUST sum to it (catches an *honest* partial run). The transferable
+    # guarantee is --expected-total-vectors, where the count comes from what the
+    # relying party knows for the suite_digest, not from the runtime.
+    total_vectors = payload.get("total_vectors")
+    if args.require_total_vectors and total_vectors is None:
+        print(
+            "FAIL: badge does not declare total_vectors (required by --require-total-vectors).",
+            file=sys.stderr,
+        )
+        return 1
+    if total_vectors is not None:
+        accounted = sum(
+            int(payload.get(k, 0)) for k in ("passed", "failed", "skipped", "xfailed", "xpassed")
+        )
+        if accounted != total_vectors:
+            print(
+                f"FAIL: vector accounting mismatch — total_vectors={total_vectors} but "
+                f"passed+failed+skipped+xfailed+xpassed={accounted} (run was incomplete).",
+                file=sys.stderr,
+            )
+            return 1
+    if args.expected_total_vectors is not None and total_vectors != args.expected_total_vectors:
+        print(
+            f"FAIL: total_vectors mismatch — expected {args.expected_total_vectors} for this "
+            f"suite, got {total_vectors}. The run did not execute the full corpus.",
+            file=sys.stderr,
+        )
+        return 1
 
     if not args.allow_failures:
         failed = payload.get("failed")

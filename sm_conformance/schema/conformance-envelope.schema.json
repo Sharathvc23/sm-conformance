@@ -78,6 +78,10 @@
         "skipped": { "$ref": "#/$defs/nonNegativeInt" },
         "xfailed": { "$ref": "#/$defs/nonNegativeInt" },
         "xpassed": { "$ref": "#/$defs/nonNegativeInt" },
+        "total_vectors": {
+          "$ref": "#/$defs/nonNegativeInt",
+          "description": "Optional. Total vectors the run should have executed. When present, passed+failed+skipped+xfailed+xpassed MUST equal it (completeness). Self-attested — a relying party cross-checks against the known count for the suite_digest via the verifier's --expected-total-vectors. See SPEC.md §5.2, §9."
+        },
         "extensions": { "$ref": "common.schema.json#/$defs/extensionsObject" }
       }
     }

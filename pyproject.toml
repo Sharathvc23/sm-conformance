@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sm-conformance"
-version = "0.1.0"
+version = "0.2.0"
 description = "Mechanical, cryptographically-attestable protocol conformance — signed badges any party re-verifies offline"
 readme = "README.md"
 license = "MIT"
@@ -20,6 +20,9 @@ classifiers = [
 dependencies = [
     "cryptography>=41.0",
     "base58>=2.1",
+    "jcs>=0.2.1",
+    "jsonschema>=4.0",
+    "referencing>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -28,8 +31,6 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.0",
     "coverage>=7.0",
-    "jsonschema>=4.0",
-    "referencing>=0.30",
 ]
 
 [project.scripts]
@@ -48,6 +49,10 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "jcs"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

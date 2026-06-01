@@ -23,10 +23,11 @@
       "failed": 3,
       "skipped": 1,
       "xfailed": 0,
-      "xpassed": 0
+      "xpassed": 0,
+      "total_vectors": 47
     },
     "signed_by": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
     "signed_at": "2026-05-30T12:00:00+00:00",
-    "signature": "A4W32XssB+9LUQKCgOp7AUwxvfAuYIwz/OEHWXKUhyuYKpAlKKsxxKD+CvsKKWZ1L7z8GjBHLKx9oPlXoxDDCA=="
+    "signature": "khh77RPJ+iVuJsXprkNjco/NdK/eQErrDnl0rCjHtnZX4rgsiCRe32EgRQJBSlBEk/frLUFmDLFa6g/9yV5ZDQ=="
   }
 }
