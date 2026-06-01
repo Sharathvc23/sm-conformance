@@ -11,7 +11,7 @@ no trust-me. This package owns exactly that envelope: building it, signing it,
 pinning it, and verifying it. It does **not** define your protocol's tests — you
 bring those.
 
-## What this package secures (v0.2)
+## What this package secures (v0.1)
 
 - **Offline-verifiable attestation.** A badge is an Ed25519 signature over an
   RFC 8785 (JCS) canonical JSON payload, with the signed value space constrained
