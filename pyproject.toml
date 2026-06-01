@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sm-conformance"
+version = "0.1.0"
+description = "Mechanical, cryptographically-attestable protocol conformance — signed badges any party re-verifies offline"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "stellarminds.ai" }]
+keywords = ["conformance", "attestation", "ed25519", "did-key", "agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Typing :: Typed",
+]
+dependencies = [
+    "cryptography>=41.0",
+    "base58>=2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+    "mypy>=1.0",
+    "coverage>=7.0",
+    "jsonschema>=4.0",
+    "referencing>=0.30",
+]
+
+[project.scripts]
+sm-verify-badge = "sm_conformance.verify_badge:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sm_conformance"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["sm_conformance"]
+# The vector generator is a dev tool that re-emits the reference fixtures; the
+# determinism test exercises its inputs, but its file-writing main path is not
+# part of the verified runtime surface.
+omit = ["sm_conformance/_badge_vector_gen.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80

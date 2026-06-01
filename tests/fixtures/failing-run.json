@@ -1,0 +1,32 @@
+{
+  "id": "failing-run",
+  "description": "Well-formed envelope, valid signature, but payload records failed=3 and exit_status=1. Verifier rejects by default (pass-gate, \u00a79.7); accepts with --allow-failures.",
+  "spec_ref": "conformance.md \u00a79.7",
+  "expected_outcome": "pass_gate_fail",
+  "verifier_options": {
+    "allow_failures": false
+  },
+  "private_keys": {
+    "runtime": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+  },
+  "envelope": {
+    "payload": {
+      "schema_version": 1,
+      "runtime": "spec-reference",
+      "protocol_versions": [
+        "0.3"
+      ],
+      "suite_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "completed_at": "2026-05-30T12:00:00+00:00",
+      "exit_status": 1,
+      "passed": 43,
+      "failed": 3,
+      "skipped": 1,
+      "xfailed": 0,
+      "xpassed": 0
+    },
+    "signed_by": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+    "signed_at": "2026-05-30T12:00:00+00:00",
+    "signature": "A4W32XssB+9LUQKCgOp7AUwxvfAuYIwz/OEHWXKUhyuYKpAlKKsxxKD+CvsKKWZ1L7z8GjBHLKx9oPlXoxDDCA=="
+  }
+}
