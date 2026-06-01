@@ -73,6 +73,7 @@ def _base_payload() -> dict[str, Any]:
         "skipped": 1,
         "xfailed": 0,
         "xpassed": 0,
+        "total_vectors": 47,
     }
 
 

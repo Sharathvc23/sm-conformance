@@ -51,6 +51,20 @@ prove the run actually happened or that the counts are truthful — a key holder
 can sign a fabricated payload. §11 covers establishing trust in untrusted
 settings.
 
+### 3.1 A badge attests one run; it is not a transferable credential
+A badge commits to a *specific* run, identified by its `suite_digest` (which
+corpus), `completed_at` (when), `runtime` (who), and — for a live run — the
+`conformance.run.*` extensions (the surface and target it ran against). A relying
+party **MUST** bind acceptance to that context: it **MUST NOT** treat a badge as a
+free-floating credential transferable to a different corpus, target, or session.
+Concretely, a verifier that admits a runtime on a badge **MUST** check the badge's
+`suite_digest` against the corpus it actually requires (`--expected-suite-digest`),
+**SHOULD** apply a freshness bound on `completed_at` appropriate to its setting, and
+for a server runtime **SHOULD** confirm the run target matches the deployment it is
+admitting. A badge detached from the context it was issued for proves nothing about
+the context it is presented in — this binding is the assumption every other
+guarantee in this document rests on.
+
 ## 4. Envelope
 
 ```json
@@ -79,17 +93,33 @@ the schema (`additionalProperties: false`).
 `skipped` / `xfailed` / `xpassed` (non-negative ints).
 
 ### 5.2 Optional members
-`adapter` (string) and `extensions` (object). `extensions` keys **MUST** be
-namespace-prefixed (`<domain>.<sub>.<field>`). A verifier **MUST** preserve and
-**MUST NOT** fail on unrecognised extension keys, and is **not required** to
-interpret them. New extension keys **MAY** ship without bumping `schema_version`.
+`adapter` (string), `total_vectors` (non-negative int), and `extensions` (object).
+`extensions` keys **MUST** be namespace-prefixed (`<domain>.<sub>.<field>`). A
+verifier **MUST** preserve and **MUST NOT** fail on unrecognised extension keys,
+and is **not required** to interpret them. New extension keys **MAY** ship without
+bumping `schema_version`.
+
+`total_vectors` is the count of vectors the run should have executed. When present,
+the counts **MUST** be complete: `passed + failed + skipped + xfailed + xpassed ==
+total_vectors`. **This is self-attested** — a runtime that ran a subset can report a
+matching smaller `total_vectors` and satisfy the equality. It therefore catches an
+*honest* partial run, not a dishonest one. The transferable guarantee is §9's
+`--expected-total-vectors`, where the count a verifier compares against comes from
+what it independently knows for the `suite_digest`, not from the runtime. Closing
+under-execution against an adversarial signer is what rung-2 lab-rerun (§11) is for.
 
 ## 6. Canonical encoding
-The signature is over the UTF-8 bytes of `canonical_json(payload)`: JSON with
-sorted keys and minimal separators (`","`, `":"`), no insignificant whitespace.
-For payloads containing only ASCII strings, integers, booleans, null, and nested
-objects/arrays of the same, this is byte-identical to RFC 8785 JCS. Non-ASCII or
-floating-point payloads require full JCS and are out of scope for v0.1.
+The signature is over the UTF-8 bytes of `canonical_json(payload)`, computed by
+**RFC 8785 (JCS)**. The signed value space is **constrained**: a payload **MUST**
+contain only ASCII strings, integers, booleans, null, and nested objects/arrays of
+the same. A value outside this space (a float, a non-ASCII string, raw bytes)
+**MUST** be rejected — on both the sign and the verify paths — before any signature
+is computed or checked. The constraint is what makes the encoding unambiguous: two
+conformant implementations (this library and the `arp` receipt suite use the same
+JCS library) produce byte-identical canonical bytes for every admissible payload,
+so a signature is portable across them. Rejecting the rest is not a limitation but
+the guarantee — an implementation cannot sign, or be made to accept, a value it
+would canonicalize differently from a peer.
 
 ## 7. Signing
 `signature = base64(Ed25519_sign(seed, canonical_json(payload)))`. `signed_by`
@@ -105,11 +135,18 @@ Any change to any vector changes the digest, invalidating prior badges. A verifi
 ## 9. Verification algorithm
 A verifier **MUST**, in order: (1) confirm the four envelope members are present;
 (2) parse `signed_by` to a 32-byte Ed25519 key (reject non-`did:key`); (3) base64-
-decode `signature`; (4) verify the signature over `canonical_json(payload)`;
-(5) if an expected `suite_digest` was supplied, confirm it matches; (6) unless
+decode `signature`; (4) verify the signature over `canonical_json(payload)`
+(rejecting a payload outside the §6 value space before checking); (5) **validate the
+envelope against the schema** (`conformance-envelope.schema.json`) — the schema is
+load-bearing on the verify path, not merely a test-time check, so a malformed-but-
+signed payload is rejected; (6) if an expected `suite_digest` was supplied, confirm
+it matches; (7) if `total_vectors` is present, confirm `passed + failed + skipped +
+xfailed + xpassed == total_vectors`, and if an expected total was supplied
+(`--expected-total-vectors`), confirm `total_vectors` equals it; (8) unless
 signature-only mode is requested, reject a payload recording `failed != 0` or
-`exit_status != 0`. Each negative vector in `tests/fixtures/` fixes the stage at
-which a malformed badge **MUST** fail.
+`exit_status != 0`. Schema validation (5) runs **after** signature verification (4):
+the verifier authenticates the bytes, then enforces their structure. Each negative
+vector in `tests/fixtures/` fixes the stage at which a malformed badge **MUST** fail.
 
 ## 10. Verifier output
 On success the verifier reports the signer, runtime, versions, and counts, exit 0.

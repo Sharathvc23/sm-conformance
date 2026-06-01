@@ -23,7 +23,8 @@
       "failed": 0,
       "skipped": 1,
       "xfailed": 0,
-      "xpassed": 0
+      "xpassed": 0,
+      "total_vectors": 47
     },
     "signed_by": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
     "signed_at": "2026-05-30T12:00:00+00:00"

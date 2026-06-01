@@ -35,28 +35,101 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.resources
 import json
 from pathlib import Path
 from typing import Any
 
 import base58
+import jcs
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
+from referencing import Registry
+from referencing.jsonschema import DRAFT202012
 
 ED25519_MULTICODEC_PREFIX = b"\xed\x01"
 
 
+class CanonicalizationError(Exception):
+    """A value cannot be safely canonicalized for signing (see SPEC.md §6)."""
+
+
+def _reject_uncanonicalizable(value: Any, path: str = "$") -> None:
+    """Reject anything outside the badge's signed value space.
+
+    Signed payloads are restricted to ASCII strings, integers, booleans, null,
+    and containers thereof. Floats (ambiguous encoding), bytes, and non-ASCII
+    strings are rejected *on both the sign and verify paths* — so a value that
+    two implementations might canonicalize differently can never be signed or
+    accepted in the first place. This is the belt to JCS's suspenders.
+    """
+    if value is None or isinstance(value, bool | int):  # bool is an int subclass; both allowed
+        return
+    if isinstance(value, str):
+        if not value.isascii():
+            raise CanonicalizationError(f"non-ASCII string at {path}: signed values must be ASCII")
+        return
+    if isinstance(value, list):
+        for i, item in enumerate(value):
+            _reject_uncanonicalizable(item, f"{path}[{i}]")
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise CanonicalizationError(f"non-string object key at {path}")
+            _reject_uncanonicalizable(item, f"{path}.{key}")
+        return
+    raise CanonicalizationError(
+        f"uncanonicalizable {type(value).__name__} at {path}: badge-signed values must be "
+        f"ASCII strings, integers, booleans, null, or containers thereof"
+    )
+
+
 def canonical_json(payload: dict[str, Any]) -> bytes:
-    """Deterministic UTF-8 encoding for signing — sorted keys, no whitespace."""
-    return json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
+    """RFC 8785 (JCS) canonical bytes for signing, after a strict value-space check.
+
+    The reject-guard constrains the input to a value space where JCS is
+    unambiguous and matches any other conformant JCS implementation byte-for-byte
+    (the ``arp`` receipt suite uses the same library). The two together are what
+    make a signature portable across implementations.
+    """
+    _reject_uncanonicalizable(payload)
+    canonical: bytes = jcs.canonicalize(payload)
+    return canonical
+
+
+def _load_schema(filename: str) -> dict[str, Any]:
+    text = (importlib.resources.files("sm_conformance") / "schema" / filename).read_text(
+        encoding="utf-8"
+    )
+    schema: dict[str, Any] = json.loads(text)
+    return schema
+
+
+def _build_registry() -> Registry:
+    resources = []
+    for filename in ("common.schema.json", "conformance-envelope.schema.json"):
+        schema = _load_schema(filename)
+        resource = DRAFT202012.create_resource(schema)
+        resources.append((filename, resource))
+        resources.append((schema["$id"], resource))
+    return Registry().with_resources(resources)
+
+
+_REGISTRY = _build_registry()
+
+
+def make_validator(filename: str) -> Draft202012Validator:
+    """Draft 2020-12 validator for a packaged schema, with cross-file $ref resolution."""
+    return Draft202012Validator(_load_schema(filename), registry=_REGISTRY)
+
+
+_ENVELOPE_VALIDATOR = make_validator("conformance-envelope.schema.json")
 
 
 def derive_did_key(pubkey32: bytes) -> str:
@@ -204,10 +277,20 @@ def verify_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
         sig = base64.b64decode(envelope["signature"], validate=True)
     except Exception as exc:
         raise VerificationError(f"signature is not valid base64: {exc}") from exc
-    canonical = canonical_json(payload)
+    try:
+        canonical = canonical_json(payload)
+    except CanonicalizationError as exc:
+        raise VerificationError(f"payload is not canonicalizable: {exc}") from exc
     pub = Ed25519PublicKey.from_public_bytes(pubkey)
     try:
         pub.verify(sig, canonical)
     except InvalidSignature as exc:
         raise VerificationError("signature verification failed") from exc
+    # Authenticate the bytes first (above), then enforce that the signed structure
+    # is well-formed — schema constraints are load-bearing on the verify path, not
+    # merely a test-time check (SPEC.md §9).
+    try:
+        _ENVELOPE_VALIDATOR.validate(envelope)
+    except ValidationError as exc:
+        raise VerificationError(f"envelope failed schema validation: {exc.message}") from exc
     return payload
