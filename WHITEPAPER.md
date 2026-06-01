@@ -146,8 +146,9 @@ Items deferred from v0.1, in rough priority order:
 
 1. **Attested-CI tooling.** Counter-signature (rung 2) ships — `counter_sign` / `verify_countersigned`, with the normative envelope in SPEC.md §12. Reference tooling for the attested-CI rung (SLSA, Sigstore) is the next slice.
 2. **A conformance registry.** A registry at `labs.stellarminds.ai/conformance` whose admission is gated on a lab re-run, counter-signed badge, or trusted CI attestation — never a bare self-signature.
-3. **Full RFC 8785 JCS.** The v0.1 canonical encoding is byte-identical to JCS for ASCII payloads; non-ASCII and floating-point payloads will require proper JCS, gated on a `schema_version` bump.
-4. **Multi-language reference verifiers.** The vectors are language-agnostic; reference verifiers in TypeScript, Go, and Rust would let non-Python runtimes verify badges natively.
+3. **Multi-language reference verifiers.** The vectors are language-agnostic; reference verifiers in TypeScript, Go, and Rust would let non-Python runtimes verify badges natively.
+
+The canonical encoding is RFC 8785 (JCS) over a constrained value space, and schema validation is load-bearing on the verify path (SPEC.md §6, §9) — both shipped in v0.1.
 
 ## 10. Related Packages
 
