@@ -187,6 +187,35 @@ def compute_suite_digest(vectors_root: Path) -> str:
     return f"sha256:{hasher.hexdigest()}"
 
 
+def compute_code_digest(root: Path, pattern: str = "*.py") -> str:
+    """sha256 over the code files (default ``*.py``) under ``root``.
+
+    ``compute_suite_digest`` pins the *vector corpus*; for a suite whose pass/fail
+    lives in **test modules**, not vectors (e.g. an HTTP server suite), the corpus
+    digest does not pin the deciding code. Emit this as the signed
+    ``conformance.suite.code_digest`` extension so a relying party can pin the code
+    too (and assert it with ``--expected-code-digest``). Same byte-stable scheme as
+    the suite digest: POSIX-relative-path-string sort, raw bytes, NUL-delimited —
+    pair with a ``.gitattributes`` pinning LF.
+    """
+    root = Path(root)
+    if not root.exists():
+        raise FileNotFoundError(f"code-digest root does not exist: {root}")
+    hasher = hashlib.sha256()
+    rels = sorted(p.relative_to(root).as_posix() for p in root.rglob(pattern))
+    if not rels:
+        raise ValueError(f"no {pattern} files found under {root}")
+    for rel in rels:
+        hasher.update(rel.encode("utf-8"))
+        hasher.update(b"\x00")
+        hasher.update((root / rel).read_bytes())
+        hasher.update(b"\x00")
+    return f"sha256:{hasher.hexdigest()}"
+
+
+SUITE_CODE_DIGEST_KEY = "conformance.suite.code_digest"
+
+
 # Informational provenance keys recording *what* a run attested. Two runs of the
 # same runtime against different surfaces (e.g. an offline client suite vs a live
 # server suite) produce payloads that differ only in their counts; these

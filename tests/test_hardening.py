@@ -249,3 +249,30 @@ def test_xfailed_run_is_rejected_by_default() -> None:
     for path in _badge_file(env):
         assert verify_badge_main([path]) == 1
         assert verify_badge_main([path, "--allow-failures"]) == 0
+
+
+def test_compute_code_digest_deterministic_and_guards(tmp_path: Any) -> None:
+    import pathlib
+
+    from sm_conformance.badge import compute_code_digest
+
+    root = pathlib.Path(tmp_path)
+    (root / "a.py").write_text("x = 1\n")
+    (root / "b.py").write_text("y = 2\n")
+    d1 = compute_code_digest(root)
+    d2 = compute_code_digest(root)
+    assert d1 == d2 and d1.startswith("sha256:")
+    (root / "a.py").write_text("x = 999\n")  # change code → digest changes
+    assert compute_code_digest(root) != d1
+    with pytest.raises(ValueError):
+        compute_code_digest(root, pattern="*.nope")
+
+
+def test_expected_code_digest_gate() -> None:
+    from sm_conformance.badge import SUITE_CODE_DIGEST_KEY
+
+    cd = "sha256:" + "c" * 64
+    env = _badge(extensions={SUITE_CODE_DIGEST_KEY: cd})
+    for path in _badge_file(env):
+        assert verify_badge_main([path, "--expected-code-digest", cd]) == 0
+        assert verify_badge_main([path, "--expected-code-digest", "sha256:" + "d" * 64]) == 1
