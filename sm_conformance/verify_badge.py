@@ -85,6 +85,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Assert the badge's conformance.run.build extension equals this (which build passed).",
     )
     parser.add_argument(
+        "--expected-code-digest",
+        default=None,
+        metavar="DIGEST",
+        help=(
+            "Assert the badge's conformance.suite.code_digest extension equals this. "
+            "For a behavioral (non-vector) suite, suite_digest does not pin the test "
+            "code — this pins it (format: sha256:<hex>)."
+        ),
+    )
+    parser.add_argument(
         "--max-age-days",
         type=float,
         default=None,
@@ -206,6 +216,18 @@ def main(argv: list[str] | None = None) -> int:
         if actual_build != args.expected_build:
             print(
                 f"FAIL: build mismatch — expected {args.expected_build}, got {actual_build!r}.",
+                file=sys.stderr,
+            )
+            return 1
+
+    # Code-digest gate (§8): pins the behavioral test CODE for a suite whose
+    # pass/fail is not vector-driven (suite_digest alone is inert there).
+    if args.expected_code_digest is not None:
+        actual_code = (payload.get("extensions") or {}).get("conformance.suite.code_digest")
+        if actual_code != args.expected_code_digest:
+            print(
+                f"FAIL: code_digest mismatch — expected {args.expected_code_digest}, "
+                f"got {actual_code!r}. The test code deciding pass/fail is not the expected one.",
                 file=sys.stderr,
             )
             return 1
