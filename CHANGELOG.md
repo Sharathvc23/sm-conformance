@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.0 — Tier-3 audit fixes: cross-language vectors, tight regex, base64, freshness honesty
+
+- **Cross-language canonicalization vectors** (`sm_conformance/vectors/canonicalization.json`):
+  valid→canonical-bytes + invalid (float / non-ASCII) the future Go/Rust/TS verifiers
+  check themselves against. Authoring them caught a real bug: **non-ASCII object keys**
+  were not rejected (only non-string keys) — now rejected.
+- **Tighter `didKey` regex**: Ed25519 did:key is always `z6Mk`+44 base58 chars; bound it
+  (was `{32,}`), matching the tight signature regex.
+- **SPEC §7**: signature is **standard** base64 (RFC 4648 §4), not url-safe.
+- **SPEC §12.1**: a relying party **MUST NOT** gate freshness on the forgeable, unsigned
+  `countersigned_at`; use the signed inner `completed_at`. `method: "verified"` carries no
+  fresh signed timestamp.
+- **SPEC §2**: the "why not Sigstore / in-toto / cosign" case (offline, no transparency log
+  or PKI, dependency-light cross-language verify; they compose as rungs above, not the base).
+
+
 ## v0.2.0 — Second hardening: skip-identity, build & code binding, freshness, generator
 
 Closes the holes that survive a correctly-configured verifier (an external audit's
