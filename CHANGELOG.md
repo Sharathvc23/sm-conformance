@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.1 — `errored` outcome bucket
+
+- Add the optional `errored` payload count: a test that **errored** (setup/teardown
+  failure) rather than ran-and-failed. Previously such tests fell into no bucket and
+  silently vanished from the accounting.
+- `errored` counts toward the `total_vectors` completeness sum, and a verifier rejects
+  `errored > 0` by default (not a passing run), like `failed`/`xfailed`.
+
+
 ## v0.3.0 — Tier-3 audit fixes: cross-language vectors, tight regex, base64, freshness honesty
 
 - **Cross-language canonicalization vectors** (`sm_conformance/vectors/canonicalization.json`):

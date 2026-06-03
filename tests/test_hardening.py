@@ -251,6 +251,29 @@ def test_xfailed_run_is_rejected_by_default() -> None:
         assert verify_badge_main([path, "--allow-failures"]) == 0
 
 
+def test_errored_run_is_rejected_by_default() -> None:
+    """errored > 0 = a test could not even run (setup/teardown error); the corpus
+    was not exercised, so it is not a passing run — even with failed==exit==0."""
+    env = _badge(passed=44, failed=0, skipped=1, errored=2, total_vectors=47)
+    for path in _badge_file(env):
+        assert verify_badge_main([path]) == 1
+        assert verify_badge_main([path, "--allow-failures"]) == 0
+
+
+def test_errored_counts_toward_accounting() -> None:
+    """errored is part of the completeness sum: a run that errors instead of passing
+    still has to add up to total_vectors, so errors can't silently shrink the corpus."""
+    # 44 + 0 + 1 + 0 + 0 + 2(errored) = 47 == total_vectors → accounting OK.
+    env = _badge(passed=44, failed=0, skipped=1, errored=2, total_vectors=47)
+    for path in _badge_file(env):
+        # accounting passes (sums to 47); only the failure gate trips it.
+        assert verify_badge_main([path, "--allow-failures"]) == 0
+    # Drop the errored count from the sum → accounting mismatch (44+1 != 47).
+    env_bad = _badge(passed=44, failed=0, skipped=1, total_vectors=47)
+    for path in _badge_file(env_bad):
+        assert verify_badge_main([path]) == 1
+
+
 def test_compute_code_digest_deterministic_and_guards(tmp_path: Any) -> None:
     import pathlib
 

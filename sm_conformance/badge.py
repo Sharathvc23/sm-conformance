@@ -312,6 +312,7 @@ def build_badge(
     skipped: int = 0,
     xfailed: int = 0,
     xpassed: int = 0,
+    errored: int = 0,
     total_vectors: int | None = None,
     skipped_vectors: list[str] | None = None,
     extensions: dict[str, str] | None = None,
@@ -339,6 +340,7 @@ def build_badge(
         "skipped": skipped,
         "xfailed": xfailed,
         "xpassed": xpassed,
+        "errored": errored,
     }
     if total_vectors is not None:
         payload["total_vectors"] = total_vectors
