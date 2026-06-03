@@ -1,10 +1,12 @@
 """Signed conformance badge — generation, canonical encoding, and verification.
 
 A conformance badge is the wrapped envelope a runtime ships at
-``conformance.json`` to prove it passes the suite at a specific
-commit. The badge is signed by the runtime's Ed25519 key; the verifier
-canonically re-encodes the payload and confirms the signature against
-the ``signed_by`` did:key.
+``conformance.json`` to prove it passed a suite. ``suite_digest`` pins the
+*vector corpus* that was run (not the runtime's own build) — the runtime's
+build, when known, is recorded separately in the ``conformance.run.build``
+extension (see ``run_extensions``). The badge is signed by the runtime's
+Ed25519 key; the verifier canonically re-encodes the payload and confirms
+the signature against the ``signed_by`` did:key.
 
 Envelope shape::
 
@@ -169,11 +171,15 @@ def compute_suite_digest(vectors_root: Path) -> str:
     if not vectors_root.exists():
         raise FileNotFoundError(f"vectors_root does not exist: {vectors_root}")
     hasher = hashlib.sha256()
-    files = sorted(p for p in vectors_root.rglob("*.json"))
-    if not files:
+    # Sort on the POSIX relative-path string, not on Path objects: Path ordering
+    # is platform-dependent, so a string sort is what makes the digest identical
+    # across OSes. (Pair this with a `.gitattributes` that forces LF on the
+    # vectors, or a CRLF checkout on Windows changes the bytes and the digest.)
+    rels = sorted(p.relative_to(vectors_root).as_posix() for p in vectors_root.rglob("*.json"))
+    if not rels:
         raise ValueError(f"no *.json vectors found under {vectors_root}")
-    for path in files:
-        rel = path.relative_to(vectors_root).as_posix()
+    for rel in rels:
+        path = vectors_root / rel
         hasher.update(rel.encode("utf-8"))
         hasher.update(b"\x00")
         hasher.update(path.read_bytes())
@@ -191,19 +197,25 @@ def compute_suite_digest(vectors_root: Path) -> str:
 # sm_conformance/schema/common.schema.json (namespace-prefixed, >=3 dotted segments).
 RUN_SURFACE_KEY = "conformance.run.surface"
 RUN_TARGET_KEY = "conformance.run.target"
+RUN_BUILD_KEY = "conformance.run.build"
 
 
-def run_extensions(surface: str, target: str) -> dict[str, str]:
-    """Provenance for a run: a ``surface`` label and the ``target`` it ran against.
+def run_extensions(surface: str, target: str, build: str | None = None) -> dict[str, str]:
+    """Provenance for a run: ``surface``, the ``target`` it ran against, and the
+    runtime ``build`` it tested.
 
-    Example: ``run_extensions("server", "https://api.example.test")`` for a live
-    HTTP run, or ``run_extensions("client", "offline")`` for an in-process suite.
-    Informational only — see the module-level note and SPEC.md §5.2.
+    Example: ``run_extensions("server", "https://api.example.test", build="a16905c")``.
+    ``build`` answers an auditor's "which build passed?" — ``suite_digest`` pins the
+    *suite corpus*, not the runtime — so record the runtime's commit/version/artifact
+    hash here when it is known. Informational only — see SPEC.md §5.2.
     """
-    return {
+    ext = {
         RUN_SURFACE_KEY: surface,
         RUN_TARGET_KEY: target.rstrip("/"),
     }
+    if build is not None:
+        ext[RUN_BUILD_KEY] = build
+    return ext
 
 
 def load_signing_key(path: Path) -> bytes:
@@ -255,6 +267,55 @@ def sign_envelope(
         "signed_at": signed_at,
         "signature": base64.b64encode(signature).decode("ascii"),
     }
+
+
+def build_badge(
+    runtime: str,
+    *,
+    signing_key32: bytes,
+    suite_digest: str,
+    protocol_versions: list[str],
+    completed_at: str,
+    passed: int,
+    failed: int,
+    skipped: int = 0,
+    xfailed: int = 0,
+    xpassed: int = 0,
+    total_vectors: int | None = None,
+    skipped_vectors: list[str] | None = None,
+    extensions: dict[str, str] | None = None,
+    signed_at: str | None = None,
+) -> dict[str, Any]:
+    """Assemble and sign a conformance badge from a test run's results.
+
+    The turnkey generator: given the counts — and, when known, the *identities*
+    of the skipped vectors (``skipped_vectors``) and run provenance
+    (``extensions``, e.g. from :func:`run_extensions`) — produce the signed
+    envelope a runtime ships. ``exit_status`` is derived (0 iff ``failed == 0``);
+    ``signed_at`` defaults to ``completed_at``. Recording *which* vectors were
+    skipped is what lets a relying party tell a fully-run badge from one that
+    skipped the adversarial cases (SPEC.md §5.2, §9).
+    """
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "runtime": runtime,
+        "protocol_versions": list(protocol_versions),
+        "suite_digest": suite_digest,
+        "completed_at": completed_at,
+        "exit_status": 0 if failed == 0 else 1,
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+        "xfailed": xfailed,
+        "xpassed": xpassed,
+    }
+    if total_vectors is not None:
+        payload["total_vectors"] = total_vectors
+    if skipped_vectors is not None:
+        payload["skipped_vectors"] = sorted(skipped_vectors)
+    if extensions:
+        payload["extensions"] = dict(extensions)
+    return sign_envelope(payload, signing_key32, signed_at or completed_at)
 
 
 class VerificationError(Exception):

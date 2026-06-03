@@ -82,6 +82,12 @@
           "$ref": "#/$defs/nonNegativeInt",
           "description": "Optional. Total vectors the run should have executed. When present, passed+failed+skipped+xfailed+xpassed MUST equal it (completeness). Self-attested — a relying party cross-checks against the known count for the suite_digest via the verifier's --expected-total-vectors. See SPEC.md §5.2, §9."
         },
+        "skipped_vectors": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "description": "Optional. The identities (vector/test IDs) of the skipped vectors — closes the gap the bare `skipped` count leaves: a runtime can skip the adversarial vectors and still satisfy the count gate. When present its length SHOULD equal `skipped`. A relying party gates on it (--max-skipped, --forbid-skip). See SPEC.md §5.2, §9."
+        },
         "extensions": { "$ref": "common.schema.json#/$defs/extensionsObject" }
       }
     }

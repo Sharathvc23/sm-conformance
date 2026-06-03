@@ -1,0 +1,5 @@
+# Conformance vectors and fixtures must hash identically across platforms.
+# compute_suite_digest reads raw bytes; without this a Windows checkout would
+# CRLF-normalize the JSON and fork the suite_digest. Pin LF.
+*.json text eol=lf
+*.py text eol=lf
