@@ -241,3 +241,11 @@ def test_freshness_gate_on_signed_completed_at() -> None:
         assert verify_badge_main([path, "--max-age-days", "1"]) == 0
     for path in _badge_file(stale):
         assert verify_badge_main([path, "--max-age-days", "30"]) == 1
+
+
+def test_xfailed_run_is_rejected_by_default() -> None:
+    """xfailed > 0 = failures laundered into drift; not a passing run."""
+    env = _badge(passed=45, failed=0, skipped=0, xfailed=2, total_vectors=47)
+    for path in _badge_file(env):
+        assert verify_badge_main([path]) == 1
+        assert verify_badge_main([path, "--allow-failures"]) == 0
