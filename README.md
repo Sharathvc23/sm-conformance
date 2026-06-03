@@ -50,6 +50,14 @@ bring those.
 - JSON Schemas for the envelope + counter-signed envelope (`sm_conformance/schema/`),
   enforced on the verify path.
 
+## Where the badge lives
+
+On disk a runtime ships its badge at `.nanda/conformance.json`. A runtime that
+serves it over HTTP **should** do so at the canonical URL **`/.well-known/conformance.json`**
+— unauthenticated (it's verifiable offline by anyone against the embedded `did:key`)
+— and advertise that URL from its discovery doc (a `conformance` field in
+`/.well-known/nanda-agent.json`). See [`SPEC.md`](./SPEC.md) §3.2.
+
 ## Installation
 
 ```bash
