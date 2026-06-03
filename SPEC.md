@@ -43,6 +43,21 @@ RFC 8785 (JCS) for ASCII payloads; SHA-256 per FIPS 180-4. The badge is the
 verifiable-conformance layer for an internet of independently-built agents
 (aligned with [Project NANDA](https://projectnanda.org) standards).
 
+**Why not Sigstore / in-toto / cosign?** Those are excellent for software *supply-chain*
+provenance — "this artifact was built from this source in this pipeline" — and a
+conformance badge composes *under* them (a `lab-rerun` counter-signature can itself be
+produced in an attested CI pipeline; SPEC §11 rung 3). But the badge's job is narrower
+and its constraints are different: it answers "did *this runtime* pass *this suite*,"
+and it must be verifiable by **anyone, fully offline, in any language, with no service
+on the path**. Sigstore presumes a transparency log and Fulcio/OIDC PKI; in-toto
+presumes a layout-and-functionary model; both pull in dependencies and online trust
+roots a relying party at internet scale cannot assume. The badge deliberately bottoms
+out on four primitives a 200-line verifier reimplements in any language — Ed25519,
+canonical JSON, SHA-256, `did:key` — with **possession of the key as the only trust
+root** and the trust ladder (§11) layering lab/CI attestation on top when more is
+needed. Decentralized, dependency-light verification is the requirement that rules the
+heavier toolchains out as the *base* layer, not as composable rungs above it.
+
 ## 3. What the badge is and is not
 A badge is a **claim by the holder of a signing key** that a suite was run with a
 given corpus and these were the counts. The signature proves the claim came from
@@ -149,9 +164,11 @@ the guarantee — an implementation cannot sign, or be made to accept, a value i
 would canonicalize differently from a peer.
 
 ## 7. Signing
-`signature = base64(Ed25519_sign(seed, canonical_json(payload)))`. `signed_by`
-**MUST** be the `did:key` derived from the signing key's public key. The key that
-signs the badge is the runtime's own key, so possession is the provenance.
+`signature = base64(Ed25519_sign(seed, canonical_json(payload)))`, where `base64`
+is **standard** base64 (RFC 4648 §4, the `+`/`/` alphabet with `=` padding) — **not**
+url-safe (§4 of 4648, not §5). `signed_by` **MUST** be the `did:key` derived from the
+signing key's public key. The key that signs the badge is the runtime's own key, so
+possession is the provenance.
 
 ## 8. Suite digest
 `suite_digest = "sha256:" + hex(SHA-256(corpus))` where the corpus hash folds each
@@ -257,7 +274,7 @@ A verifier given a counter-signed envelope **MUST**:
 2. Recover the lab public key from `countersigned_by` (`did:key`, §9.2) and verify `countersignature` over `canonical_json(payload)`. Reject if it fails.
 3. Apply the pass-gate (§9.7) to the **inner** badge payload.
 
-Like the badge's `signed_at`, `countersigned_at` sits outside the signed payload — attestation *freshness* (e.g. "re-run within 90 days") is therefore an out-of-band policy a relying party enforces, not a property the envelope carries.
+Like the badge's `signed_at`, `countersigned_at` sits outside the signed payload, so it is **forgeable**: a holder can set it to any value without invalidating the countersignature. A relying party **MUST NOT** gate freshness on `countersigned_at`. Freshness, if required, **MUST** be taken from a **signed** timestamp — the inner badge's `completed_at` (which `verify_countersigned` returns and `--max-age-days` reads). Note that a `method: "verified"` counter-sign (the lab confirmed the inner signature and counts without re-running) carries **no fresh signed timestamp of its own** beyond that inner `completed_at`, so it cannot support a freshness claim newer than the original run; only `lab-rerun` re-stamps a recent run.
 
 Both signatures **MUST** verify. A relying party that trusts the `countersigned_by` lab thereby gains the lab's attestation that the inner badge is genuine — the assurance a self-signed badge cannot provide, and the rung registry admission requires for untrusted runtimes.
 

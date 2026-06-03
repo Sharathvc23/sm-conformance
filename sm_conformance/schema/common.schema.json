@@ -6,8 +6,8 @@
   "$defs": {
     "didKey": {
       "type": "string",
-      "pattern": "^did:key:z[1-9A-HJ-NP-Za-km-z]{32,}$",
-      "description": "did:key identifier per the W3C did:key method (multibase base58btc over multicodec 0xed01 || Ed25519 pubkey32). The leading 'z' indicates base58btc."
+      "pattern": "^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$",
+      "description": "did:key identifier per the W3C did:key method (multibase base58btc over multicodec 0xed01 || Ed25519 pubkey32). An Ed25519 did:key always encodes to 'z6Mk' + 44 base58btc chars (the 0xed01 prefix is invariant), so the length is fixed — matching the tight signature regex."
     },
     "base64Ed25519Signature": {
       "type": "string",
