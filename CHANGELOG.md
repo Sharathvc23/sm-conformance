@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.2.0 — Second hardening: skip-identity, build & code binding, freshness, generator
+
+Closes the holes that survive a correctly-configured verifier (an external audit's
+Tier-1/2 findings), and adds the generate side the toolkit was missing.
+
+- **build_badge()** — turnkey generator: counts + skipped-vector IDs + run provenance
+  → signed badge.
+- **skipped_vectors** (signed) + `--max-skipped` / `--forbid-skip` / `--require-skip-ids`
+  — the bare `skipped` count let a runtime skip the adversarial vector it would fail
+  and still pass; the identities make skips gateable.
+- **compute_code_digest** + `conformance.suite.code_digest` + `--expected-code-digest`
+  — pins a behavioral suite's *test code*, which `suite_digest` (vectors-only) cannot.
+- **conformance.run.build** + `--expected-build` — "which build passed?"; fixed the
+  docstring that claimed commit-binding with no field.
+- **`--max-age-days`** against the **signed** `completed_at` (not the forgeable
+  `countersigned_at`); reject **`xfailed > 0`** (drift-laundering) by default.
+- **compute_suite_digest**: POSIX-string sort + `.gitattributes` (LF) — no cross-platform drift.
+- SPEC §3.2/§5.2/§8/§9 (+ §9.1 locked-down invocation). All additive; `schema_version`
+  stays 1, every v0.1.0 badge still verifies.
+
+
 ## v0.1.0 — Initial public release
 
 First public release of `sm-conformance` — the signed conformance-badge toolkit,
