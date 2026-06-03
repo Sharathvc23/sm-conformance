@@ -119,15 +119,23 @@ the schema (`additionalProperties: false`).
 `skipped` / `xfailed` / `xpassed` (non-negative ints).
 
 ### 5.2 Optional members
-`adapter` (string), `total_vectors` (non-negative int), and `extensions` (object).
+`adapter` (string), `total_vectors` (non-negative int), `errored` (non-negative
+int), `skipped_vectors`, and `extensions` (object).
 `extensions` keys **MUST** be namespace-prefixed (`<domain>.<sub>.<field>`). A
 verifier **MUST** preserve and **MUST NOT** fail on unrecognised extension keys,
 and is **not required** to interpret them. New extension keys **MAY** ship without
 bumping `schema_version`.
 
+`errored` is the count of tests that **errored** — a setup or teardown failure that
+prevented the test body from running — as distinct from a test that ran and
+`failed`. A run with `errored > 0` did not actually exercise that part of the
+corpus, so a verifier **MUST** treat it as non-passing (rejected unless
+`--allow-failures`), exactly like `failed > 0`. When present it also counts toward
+the completeness sum below, so an error cannot silently shrink the executed corpus.
+
 `total_vectors` is the count of vectors the run should have executed. When present,
-the counts **MUST** be complete: `passed + failed + skipped + xfailed + xpassed ==
-total_vectors`. **This is self-attested** — a runtime that ran a subset can report a
+the counts **MUST** be complete: `passed + failed + skipped + xfailed + xpassed +
+errored == total_vectors`. **This is self-attested** — a runtime that ran a subset can report a
 matching smaller `total_vectors` and satisfy the equality. It therefore catches an
 *honest* partial run, not a dishonest one. The transferable guarantee is §9's
 `--expected-total-vectors`, where the count a verifier compares against comes from
@@ -201,7 +209,7 @@ envelope against the schema** (`conformance-envelope.schema.json`) — the schem
 load-bearing on the verify path, not merely a test-time check, so a malformed-but-
 signed payload is rejected; (6) if an expected `suite_digest` was supplied, confirm
 it matches; (7) if `total_vectors` is present, confirm `passed + failed + skipped +
-xfailed + xpassed == total_vectors`, and if an expected total was supplied
+xfailed + xpassed + errored == total_vectors`, and if an expected total was supplied
 (`--expected-total-vectors`), confirm `total_vectors` equals it; (8) apply the skip
 policy — fail if `skipped > --max-skipped`, if any `--forbid-skip` ID is in
 `skipped_vectors`, or (with `--require-skip-ids`) if `skipped > 0` without
@@ -209,7 +217,8 @@ policy — fail if `skipped > --max-skipped`, if any `--forbid-skip` ID is in
 `extensions.conformance.run.build` equals it; (10) if `--max-age-days` was supplied,
 confirm the **signed `completed_at`** (never the unsigned `countersigned_at`, §12.1)
 is within the bound; (11) unless signature-only mode is requested, reject a payload
-recording `failed != 0` or `exit_status != 0`. Schema validation (5) runs **after**
+recording `failed != 0`, `exit_status != 0`, `xfailed != 0`, or `errored != 0`.
+Schema validation (5) runs **after**
 signature verification (4): the verifier authenticates the bytes, then enforces their
 structure. Each negative vector in `tests/fixtures/` fixes the stage at which a
 malformed badge **MUST** fail.
