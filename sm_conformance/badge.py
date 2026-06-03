@@ -84,6 +84,8 @@ def _reject_uncanonicalizable(value: Any, path: str = "$") -> None:
         for key, item in value.items():
             if not isinstance(key, str):
                 raise CanonicalizationError(f"non-string object key at {path}")
+            if not key.isascii():
+                raise CanonicalizationError(f"non-ASCII object key at {path}: {key!r}")
             _reject_uncanonicalizable(item, f"{path}.{key}")
         return
     raise CanonicalizationError(

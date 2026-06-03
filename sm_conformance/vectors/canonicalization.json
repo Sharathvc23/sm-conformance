@@ -1,0 +1,91 @@
+{
+  "description": "Cross-language canonicalization vectors for the badge value space (SPEC.md \u00a76). A conformant implementation MUST canonicalize each 'valid' input to exactly its 'canonical' UTF-8 bytes, and MUST reject each 'invalid' input before signing or verifying. (bytes-valued inputs can't be expressed in JSON; those are tested in-language.)",
+  "spec_ref": "SPEC.md#6-canonical-encoding",
+  "valid": [
+    {
+      "id": "sorts-object-keys",
+      "input": {
+        "b": 1,
+        "a": 2
+      },
+      "canonical": "{\"a\":2,\"b\":1}"
+    },
+    {
+      "id": "nested-and-types",
+      "input": {
+        "z": [
+          1,
+          {
+            "k": "v"
+          }
+        ],
+        "a": true,
+        "n": null,
+        "m": -3
+      },
+      "canonical": "{\"a\":true,\"m\":-3,\"n\":null,\"z\":[1,{\"k\":\"v\"}]}"
+    },
+    {
+      "id": "empty-containers",
+      "input": {
+        "arr": [],
+        "obj": {}
+      },
+      "canonical": "{\"arr\":[],\"obj\":{}}"
+    },
+    {
+      "id": "integers-not-floats",
+      "input": {
+        "passed": 46,
+        "failed": 0,
+        "total_vectors": 47
+      },
+      "canonical": "{\"failed\":0,\"passed\":46,\"total_vectors\":47}"
+    },
+    {
+      "id": "string-with-json-meta",
+      "input": {
+        "s": "a:b,c\"d"
+      },
+      "canonical": "{\"s\":\"a:b,c\\\"d\"}"
+    },
+    {
+      "id": "ascii-symbols",
+      "input": {
+        "runtime": "sm-chapter",
+        "suite": "sha256:aaaaaaaa"
+      },
+      "canonical": "{\"runtime\":\"sm-chapter\",\"suite\":\"sha256:aaaaaaaa\"}"
+    }
+  ],
+  "invalid": [
+    {
+      "id": "float-value",
+      "input": {
+        "v": 1.5
+      },
+      "reason": "floats are outside the value space (ambiguous encoding)"
+    },
+    {
+      "id": "float-zero",
+      "input": {
+        "v": 0.0
+      },
+      "reason": "0.0 parses to a float, not an int \u2014 rejected"
+    },
+    {
+      "id": "non-ascii-string",
+      "input": {
+        "runtime": "caf\u00e9"
+      },
+      "reason": "non-ASCII string"
+    },
+    {
+      "id": "non-ascii-key",
+      "input": {
+        "\u00e9": 1
+      },
+      "reason": "non-ASCII object key"
+    }
+  ]
+}
