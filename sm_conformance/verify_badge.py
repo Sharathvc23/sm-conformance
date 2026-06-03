@@ -234,10 +234,14 @@ def main(argv: list[str] | None = None) -> int:
     if not args.allow_failures:
         failed = payload.get("failed")
         exit_status = payload.get("exit_status")
-        if failed is None or failed != 0 or exit_status != 0:
+        # xfailed > 0 means failures were laundered into expected-drift (the suite
+        # was run with a drift mode that exits 0). Reject it: a run with xfails is
+        # not a passing run, even though failed==0 and exit_status==0.
+        xfailed = int(payload.get("xfailed", 0))
+        if failed is None or failed != 0 or exit_status != 0 or xfailed != 0:
             print(
                 f"FAIL: badge records a non-passing run "
-                f"(failed={failed}, exit_status={exit_status}). "
+                f"(failed={failed}, exit_status={exit_status}, xfailed={xfailed}). "
                 f"Use --allow-failures to verify signature only.",
                 file=sys.stderr,
             )
