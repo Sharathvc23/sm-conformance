@@ -7,6 +7,7 @@ Covers the verify-path enforcement that 0.1.0 left decorative — see SPEC.md
 from __future__ import annotations
 
 import base64
+import datetime as _dt
 import json
 import tempfile
 from collections.abc import Iterator
@@ -26,6 +27,11 @@ from sm_conformance.badge import (
 )
 from sm_conformance.countersign import CountersignError, counter_sign, verify_countersigned
 from sm_conformance.verify_badge import main as verify_badge_main
+
+
+def dt_now() -> str:
+    return _dt.datetime.now(_dt.UTC).isoformat()
+
 
 SIGNED_AT = "2026-06-01T00:00:00+00:00"
 
@@ -160,3 +166,78 @@ def test_cli_require_total_vectors_when_absent_rejected() -> None:
     for path in _badge_file(env):
         assert verify_badge_main([path]) == 0  # absent is fine by default
         assert verify_badge_main([path, "--require-total-vectors"]) == 1
+
+
+# --- generator + skip-identity + build + freshness gates (2nd hardening) ------
+
+
+def _badge(**over: Any) -> dict[str, Any]:
+    """A signed badge via the generator, with overridable build_badge kwargs."""
+    from sm_conformance.badge import build_badge
+
+    kw: dict[str, Any] = dict(
+        runtime="sm-test",
+        signing_key32=_seed(),
+        suite_digest="sha256:" + "a" * 64,
+        protocol_versions=["0.3"],
+        completed_at=SIGNED_AT,
+        passed=46,
+        failed=0,
+        skipped=1,
+        total_vectors=47,
+    )
+    kw.update(over)
+    return build_badge(**kw)
+
+
+def test_build_badge_emits_skip_ids_and_build() -> None:
+    from sm_conformance.badge import run_extensions
+
+    env = _badge(
+        skipped=2,
+        total_vectors=48,
+        skipped_vectors=["b", "a"],
+        extensions=run_extensions("server", "https://x.test/", build="abc123"),
+    )
+    p = verify_envelope(env)
+    assert p["skipped_vectors"] == ["a", "b"]  # sorted
+    assert p["extensions"]["conformance.run.build"] == "abc123"
+    assert p["extensions"]["conformance.run.target"] == "https://x.test"
+
+
+def test_max_skipped_gate() -> None:
+    env = _badge(skipped=3, total_vectors=49)
+    for path in _badge_file(env):
+        assert verify_badge_main([path, "--max-skipped", "2"]) == 1
+        assert verify_badge_main([path, "--max-skipped", "3"]) == 0
+
+
+def test_forbid_skip_gate() -> None:
+    env = _badge(skipped=2, total_vectors=48, skipped_vectors=["adversarial-x", "env-y"])
+    for path in _badge_file(env):
+        assert verify_badge_main([path, "--forbid-skip", "adversarial-x"]) == 1
+        assert verify_badge_main([path, "--forbid-skip", "not-skipped"]) == 0
+
+
+def test_require_skip_ids_gate() -> None:
+    env = _badge(skipped=1, total_vectors=47)  # has skips but no skipped_vectors
+    for path in _badge_file(env):
+        assert verify_badge_main([path, "--require-skip-ids"]) == 1
+
+
+def test_expected_build_gate() -> None:
+    from sm_conformance.badge import run_extensions
+
+    env = _badge(extensions=run_extensions("client", "offline", build="deadbeef"))
+    for path in _badge_file(env):
+        assert verify_badge_main([path, "--expected-build", "deadbeef"]) == 0
+        assert verify_badge_main([path, "--expected-build", "other"]) == 1
+
+
+def test_freshness_gate_on_signed_completed_at() -> None:
+    fresh = _badge(completed_at=dt_now())
+    stale = _badge(completed_at="2020-01-01T00:00:00+00:00")
+    for path in _badge_file(fresh):
+        assert verify_badge_main([path, "--max-age-days", "1"]) == 0
+    for path in _badge_file(stale):
+        assert verify_badge_main([path, "--max-age-days", "30"]) == 1

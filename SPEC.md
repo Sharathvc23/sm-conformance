@@ -117,7 +117,23 @@ matching smaller `total_vectors` and satisfy the equality. It therefore catches 
 *honest* partial run, not a dishonest one. The transferable guarantee is §9's
 `--expected-total-vectors`, where the count a verifier compares against comes from
 what it independently knows for the `suite_digest`, not from the runtime. Closing
-under-execution against an adversarial signer is what rung-2 lab-rerun (§11) is for.
+*count* fabrication against an adversarial signer is what rung-2 lab-rerun (§11)
+is for — but a re-run reproduces a capability-gated **skip**, so lab-rerun does
+**not** close coverage gaps; that is what `skipped_vectors` + a skip policy below
+are for.
+
+`skipped_vectors` (array of unique non-empty strings) is the **identity** of the
+skipped vectors. The bare `skipped` count is insufficient: a runtime can skip the
+one adversarial vector it would fail and still satisfy the `total_vectors`
+accounting and `failed == 0`. When `skipped > 0` a producer **SHOULD** enumerate
+`skipped_vectors` (length equal to `skipped`), and a relying party gates on it
+(§9: `--max-skipped`, `--forbid-skip`, `--require-skip-ids`).
+
+`extensions.conformance.run.build` (string) records **which build** of the runtime
+was tested — a commit SHA, image digest, or version. `suite_digest` pins the *suite
+corpus*, not the runtime, so without this an auditor cannot answer "which build
+passed?" and a regressed redeploy keeps verifying on the old badge. A relying party
+asserts it with `--expected-build`.
 
 ## 6. Canonical encoding
 The signature is over the UTF-8 bytes of `canonical_json(payload)`, computed by
@@ -138,10 +154,25 @@ would canonicalize differently from a peer.
 signs the badge is the runtime's own key, so possession is the provenance.
 
 ## 8. Suite digest
-`suite_digest = "sha256:" + hex(SHA-256(corpus))` where the corpus hash folds, in
-sorted path order, each vector file's POSIX-relative path and bytes (NUL-delimited).
-Any change to any vector changes the digest, invalidating prior badges. A verifier
-**MAY** assert an expected digest to pin a badge to a known corpus.
+`suite_digest = "sha256:" + hex(SHA-256(corpus))` where the corpus hash folds each
+`*.json` vector file's POSIX-relative path and raw bytes (NUL-delimited). For
+cross-platform reproducibility three things are **normative**: (a) files are sorted
+on their **POSIX-relative-path string** (not on platform-dependent path objects);
+(b) the corpus is **`*.json` only**; (c) vector bytes **MUST** be checked out with
+LF line endings (ship a `.gitattributes` pinning `*.json text eol=lf`, or a CRLF
+checkout forks the digest). Any change to any vector changes the digest, invalidating
+prior badges. A verifier **MAY** assert an expected digest to pin a badge to a known
+corpus.
+
+> **Scope (load-bearing).** The digest pins the *vector corpus*. For a suite whose
+> pass/fail is **vector-driven** (e.g. the client signing suite) it pins what was
+> checked. For a suite that is **behavioral code** (e.g. an HTTP server suite whose
+> assertions live in test modules, not vectors), the digest does **not** pin the
+> deciding code — two revisions of those tests yield the same digest. Such a suite
+> **SHOULD** additionally fold a hash of its test modules into the digest or carry a
+> signed `conformance.suite.code_digest` extension; until it does, corpus-pinning is
+> inert for it and a relying party **MUST NOT** treat the digest as proof of *what
+> behavior* was checked.
 
 ## 9. Verification algorithm
 A verifier **MUST**, in order: (1) confirm the four envelope members are present;
@@ -153,11 +184,33 @@ load-bearing on the verify path, not merely a test-time check, so a malformed-bu
 signed payload is rejected; (6) if an expected `suite_digest` was supplied, confirm
 it matches; (7) if `total_vectors` is present, confirm `passed + failed + skipped +
 xfailed + xpassed == total_vectors`, and if an expected total was supplied
-(`--expected-total-vectors`), confirm `total_vectors` equals it; (8) unless
-signature-only mode is requested, reject a payload recording `failed != 0` or
-`exit_status != 0`. Schema validation (5) runs **after** signature verification (4):
-the verifier authenticates the bytes, then enforces their structure. Each negative
-vector in `tests/fixtures/` fixes the stage at which a malformed badge **MUST** fail.
+(`--expected-total-vectors`), confirm `total_vectors` equals it; (8) apply the skip
+policy — fail if `skipped > --max-skipped`, if any `--forbid-skip` ID is in
+`skipped_vectors`, or (with `--require-skip-ids`) if `skipped > 0` without
+`skipped_vectors`; (9) if `--expected-build` was supplied, confirm
+`extensions.conformance.run.build` equals it; (10) if `--max-age-days` was supplied,
+confirm the **signed `completed_at`** (never the unsigned `countersigned_at`, §12.1)
+is within the bound; (11) unless signature-only mode is requested, reject a payload
+recording `failed != 0` or `exit_status != 0`. Schema validation (5) runs **after**
+signature verification (4): the verifier authenticates the bytes, then enforces their
+structure. Each negative vector in `tests/fixtures/` fixes the stage at which a
+malformed badge **MUST** fail.
+
+### 9.1 Locked-down invocation
+For registry admission of an untrusted runtime, all gates **SHOULD** be on at once —
+pin the corpus *and* the count, demand skip identities and bound them, pin the build,
+bound freshness, and require a lab counter-signature:
+
+```
+sm-verify-badge badge.json \
+  --expected-suite-digest sha256:<known> --expected-total-vectors <N> \
+  --require-skip-ids --max-skipped <K> --forbid-skip <id> \
+  --expected-build <sha> --max-age-days 90 \
+  --require-countersigned --require-method lab-rerun --trusted-signer did:key:z<lab>
+```
+
+A self-signed badge with only `--expected-suite-digest` is **non-repudiation + a
+stable reference**, not proof a run happened (§3, §11).
 
 ## 10. Verifier output
 On success the verifier reports the signer, runtime, versions, and counts, exit 0.
