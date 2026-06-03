@@ -169,10 +169,11 @@ corpus.
 > checked. For a suite that is **behavioral code** (e.g. an HTTP server suite whose
 > assertions live in test modules, not vectors), the digest does **not** pin the
 > deciding code — two revisions of those tests yield the same digest. Such a suite
-> **SHOULD** additionally fold a hash of its test modules into the digest or carry a
-> signed `conformance.suite.code_digest` extension; until it does, corpus-pinning is
-> inert for it and a relying party **MUST NOT** treat the digest as proof of *what
-> behavior* was checked.
+> **SHOULD** carry a signed **`conformance.suite.code_digest`** extension —
+> `compute_code_digest(root)` hashes the test modules with the same byte-stable
+> scheme — and a relying party pins it with `--expected-code-digest` (§9). Until a
+> badge carries it, corpus-pinning is inert for that suite and a relying party
+> **MUST NOT** treat the digest alone as proof of *what behavior* was checked.
 
 ## 9. Verification algorithm
 A verifier **MUST**, in order: (1) confirm the four envelope members are present;
