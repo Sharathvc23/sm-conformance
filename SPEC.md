@@ -65,6 +65,17 @@ admitting. A badge detached from the context it was issued for proves nothing ab
 the context it is presented in — this binding is the assumption every other
 guarantee in this document rests on.
 
+### 3.2 Publishing the badge
+A runtime ships its badge on disk at `.nanda/conformance.json` (the convention a
+repository, registry crawler, or CI artifact looks for). A runtime that also serves
+it over HTTP **SHOULD** do so at the canonical URL **`/.well-known/conformance.json`**
+— **unauthenticated**, since the badge is verifiable offline by anyone against the
+embedded `did:key`, and gating a public proof behind authentication defeats its
+purpose. A runtime **SHOULD** advertise that URL from its discovery document (e.g. a
+`conformance` field in `/.well-known/nanda-agent.json`) so a relying party reaches
+it in one hop. The on-disk path and the served URL are distinct concerns: the file
+is where the artifact lives, `.well-known/` is where discovery metadata is fetched.
+
 ## 4. Envelope
 
 ```json
