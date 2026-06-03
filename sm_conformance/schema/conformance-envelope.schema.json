@@ -78,6 +78,10 @@
         "skipped": { "$ref": "#/$defs/nonNegativeInt" },
         "xfailed": { "$ref": "#/$defs/nonNegativeInt" },
         "xpassed": { "$ref": "#/$defs/nonNegativeInt" },
+        "errored": {
+          "$ref": "#/$defs/nonNegativeInt",
+          "description": "Optional. Tests that ERRORED (setup/teardown failure) rather than ran — distinct from failed. When present, counts toward the total_vectors completeness sum, and a verifier rejects errored>0 by default (not a passing run)."
+        },
         "total_vectors": {
           "$ref": "#/$defs/nonNegativeInt",
           "description": "Optional. Total vectors the run should have executed. When present, passed+failed+skipped+xfailed+xpassed MUST equal it (completeness). Self-attested — a relying party cross-checks against the known count for the suite_digest via the verifier's --expected-total-vectors. See SPEC.md §5.2, §9."

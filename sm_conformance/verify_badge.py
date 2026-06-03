@@ -170,12 +170,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if total_vectors is not None:
         accounted = sum(
-            int(payload.get(k, 0)) for k in ("passed", "failed", "skipped", "xfailed", "xpassed")
+            int(payload.get(k, 0))
+            for k in ("passed", "failed", "skipped", "xfailed", "xpassed", "errored")
         )
         if accounted != total_vectors:
             print(
                 f"FAIL: vector accounting mismatch — total_vectors={total_vectors} but "
-                f"passed+failed+skipped+xfailed+xpassed={accounted} (run was incomplete).",
+                f"passed+failed+skipped+xfailed+xpassed+errored={accounted} (run was incomplete).",
                 file=sys.stderr,
             )
             return 1
@@ -260,11 +261,14 @@ def main(argv: list[str] | None = None) -> int:
         # was run with a drift mode that exits 0). Reject it: a run with xfails is
         # not a passing run, even though failed==0 and exit_status==0.
         xfailed = int(payload.get("xfailed", 0))
-        if failed is None or failed != 0 or exit_status != 0 or xfailed != 0:
+        # errored > 0 means a test could not even run (setup/teardown error) — the
+        # corpus was not actually exercised, so it is not a passing run either.
+        errored = int(payload.get("errored", 0))
+        if failed is None or failed != 0 or exit_status != 0 or xfailed != 0 or errored != 0:
             print(
                 f"FAIL: badge records a non-passing run "
-                f"(failed={failed}, exit_status={exit_status}, xfailed={xfailed}). "
-                f"Use --allow-failures to verify signature only.",
+                f"(failed={failed}, exit_status={exit_status}, xfailed={xfailed}, "
+                f"errored={errored}). Use --allow-failures to verify signature only.",
                 file=sys.stderr,
             )
             return 1
