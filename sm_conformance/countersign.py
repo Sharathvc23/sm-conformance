@@ -142,6 +142,8 @@ def verify_countersigned(envelope: dict[str, Any]) -> dict[str, Any]:
 
 def is_countersigned(envelope: dict[str, Any]) -> bool:
     """True if ``envelope`` is a counter-signed badge (vs a bare badge)."""
-    return "countersignature" in envelope and isinstance(envelope.get("payload"), dict) and (
-        "badge" in envelope["payload"]
+    return (
+        "countersignature" in envelope
+        and isinstance(envelope.get("payload"), dict)
+        and ("badge" in envelope["payload"])
     )

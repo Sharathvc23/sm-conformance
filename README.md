@@ -43,10 +43,14 @@ bring those.
 ## Features
 
 - `sign_envelope` / `verify_envelope` — build and check a signed badge.
-- `compute_suite_digest(path)` — pin a badge to a vector corpus.
+- `build_badge(runtime, …)` — turnkey generator: assemble + sign a badge from a
+  test run's counts, the skipped-vector IDs, and run provenance.
+- `compute_suite_digest(path)` — pin a badge to a vector corpus (cross-platform stable).
 - `derive_did_key` / `parse_did_key` — W3C `did:key` (base58btc, multicodec `0xed01`).
-- `run_extensions(surface, target)` — optional, namespaced run provenance.
-- `sm-verify-badge` CLI (`python -m sm_conformance.verify_badge`).
+- `run_extensions(surface, target, build=…)` — namespaced run provenance incl. build.
+- `sm-verify-badge` CLI with admission gates: `--expected-suite-digest`,
+  `--expected-total-vectors`, `--max-skipped` / `--forbid-skip` / `--require-skip-ids`,
+  `--expected-build`, `--max-age-days`, `--require-countersigned` (see SPEC §9.1).
 - JSON Schemas for the envelope + counter-signed envelope (`sm_conformance/schema/`),
   enforced on the verify path.
 

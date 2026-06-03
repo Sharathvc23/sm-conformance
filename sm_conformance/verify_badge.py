@@ -14,6 +14,7 @@ Exit status:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import sys
 from pathlib import Path
@@ -52,6 +53,43 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         default=False,
         help="Fail unless the badge declares total_vectors.",
+    )
+    parser.add_argument(
+        "--max-skipped",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Fail if the run skipped more than N vectors. Skips are the residual "
+            "hole the count gate leaves — a runtime can skip the adversarial "
+            "vectors and still sum to total_vectors."
+        ),
+    )
+    parser.add_argument(
+        "--forbid-skip",
+        action="append",
+        default=None,
+        metavar="VECTOR_ID",
+        help="Fail if this vector ID appears in skipped_vectors (repeatable).",
+    )
+    parser.add_argument(
+        "--require-skip-ids",
+        action="store_true",
+        default=False,
+        help="Fail if the badge skipped vectors but does not enumerate skipped_vectors.",
+    )
+    parser.add_argument(
+        "--expected-build",
+        default=None,
+        metavar="BUILD",
+        help="Assert the badge's conformance.run.build extension equals this (which build passed).",
+    )
+    parser.add_argument(
+        "--max-age-days",
+        type=float,
+        default=None,
+        metavar="DAYS",
+        help="Fail if completed_at is older than DAYS (freshness gate; stale = weak evidence).",
     )
     parser.add_argument(
         "--allow-failures",
@@ -139,6 +177,60 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    # Skip gate (§9). The bare `skipped` count + accounting lets a runtime skip the
+    # adversarial vectors and still pass. skipped_vectors makes the skips visible;
+    # these gates let a relying party bound or forbid them.
+    skipped = int(payload.get("skipped", 0))
+    skipped_vectors = payload.get("skipped_vectors")
+    if args.require_skip_ids and skipped > 0 and not skipped_vectors:
+        print(
+            f"FAIL: badge skipped {skipped} vectors but does not enumerate skipped_vectors.",
+            file=sys.stderr,
+        )
+        return 1
+    if args.max_skipped is not None and skipped > args.max_skipped:
+        print(
+            f"FAIL: too many skipped vectors — {skipped} > --max-skipped {args.max_skipped}.",
+            file=sys.stderr,
+        )
+        return 1
+    if args.forbid_skip:
+        forbidden_hit = sorted(set(skipped_vectors or []) & set(args.forbid_skip))
+        if forbidden_hit:
+            print(f"FAIL: required vectors were skipped: {forbidden_hit}.", file=sys.stderr)
+            return 1
+
+    # Build gate (§9): "which build passed?" — suite_digest pins the corpus, not the runtime.
+    if args.expected_build is not None:
+        actual_build = (payload.get("extensions") or {}).get("conformance.run.build")
+        if actual_build != args.expected_build:
+            print(
+                f"FAIL: build mismatch — expected {args.expected_build}, got {actual_build!r}.",
+                file=sys.stderr,
+            )
+            return 1
+
+    # Freshness gate (§9): a stale badge is weak evidence. Gated on the SIGNED
+    # completed_at (NOT the forgeable, out-of-payload countersigned_at).
+    if args.max_age_days is not None:
+        completed_at = payload.get("completed_at")
+        try:
+            ts = dt.datetime.fromisoformat(str(completed_at))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=dt.UTC)
+            age_days = (dt.datetime.now(dt.UTC) - ts).total_seconds() / 86400.0
+        except (TypeError, ValueError):
+            print(
+                f"FAIL: cannot parse completed_at for freshness: {completed_at!r}.", file=sys.stderr
+            )
+            return 1
+        if age_days > args.max_age_days:
+            print(
+                f"FAIL: stale badge — {age_days:.1f}d old > --max-age-days {args.max_age_days}.",
+                file=sys.stderr,
+            )
+            return 1
+
     if not args.allow_failures:
         failed = payload.get("failed")
         exit_status = payload.get("exit_status")
@@ -182,10 +274,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if countersigned:
         cs = envelope["payload"]
-        print(
-            f"OK: counter-signed by {envelope['countersigned_by']} "
-            f"(method={cs.get('method')})"
-        )
+        print(f"OK: counter-signed by {envelope['countersigned_by']} (method={cs.get('method')})")
         print(f"    inner badge signed by {cs['badge']['signed_by']}")
     else:
         print(f"OK: signed by {envelope['signed_by']}")
