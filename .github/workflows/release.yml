@@ -1,0 +1,44 @@
+# Publish sm-conformance to PyPI on a version tag, via PyPI Trusted Publishing (OIDC).
+#
+# No API token: PyPI is told once (in its web UI) to trust THIS repo + THIS
+# workflow file, and `id-token: write` lets the job mint a short-lived OIDC token
+# PyPI accepts. See PUBLISHING.md for the one-time setup and the exact values to
+# type into PyPI's "Add a publisher" form.
+#
+# Fires only when a tag like `v0.3.1` is pushed — never on normal commits.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build + publish to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # REQUIRED for Trusted Publishing — this is what replaces the token.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Check the built distributions
+        run: |
+          python -m pip install --upgrade twine
+          python -m twine check dist/*
+
+      - name: Publish to PyPI
+        # No `with: password:` — the action uses the OIDC token automatically.
+        uses: pypa/gh-action-pypi-publish@release/v1
