@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.2 — fix `__version__` string
+
+- `sm_conformance.__version__` reported `0.1.0` while the published package was
+  already `0.3.x` (the string was never bumped alongside `pyproject.toml`). It now
+  matches the package version. No API or behavioral changes.
+
 ## v0.3.1 — `errored` outcome bucket
 
 - Add the optional `errored` payload count: a test that **errored** (setup/teardown

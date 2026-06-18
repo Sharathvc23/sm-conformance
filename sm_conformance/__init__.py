@@ -33,7 +33,7 @@ from sm_conformance.countersign import (
     verify_countersigned,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.3.2"
 
 __all__ = [
     "ED25519_MULTICODEC_PREFIX",
