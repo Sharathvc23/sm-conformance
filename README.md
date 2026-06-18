@@ -107,6 +107,8 @@ fixed test seeds, not production signers.
 
 - [`SPEC.md`](./SPEC.md) — normative envelope, canonical encoding, signing,
   suite-digest, verification algorithm, and trust ladder. Working draft.
+- [`THREATMODEL.md`](./THREATMODEL.md) — what a badge does and does not prove,
+  threats T1–T10, the trust-rung roadmap, and a relying-party checklist.
 - [`WHITEPAPER.md`](./WHITEPAPER.md) — why mechanical conformance matters for an
   internet of independently-built agents.
 
