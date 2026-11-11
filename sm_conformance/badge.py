@@ -56,6 +56,13 @@ from referencing.jsonschema import DRAFT202012
 
 ED25519_MULTICODEC_PREFIX = b"\xed\x01"
 
+# RFC 8785 §3.1 serializes numbers as IEEE 754 doubles, so an integer is only
+# canonical when it is exactly representable as one: |n| <= 2^53 - 1 (ECMAScript's
+# Number.MAX_SAFE_INTEGER). Beyond that, two conformant JCS implementations may
+# emit different digit strings for the same Python int, so such a value is outside
+# the signed value space — rejected up front, like a float.
+MAX_SAFE_INTEGER = 2**53 - 1
+
 
 class CanonicalizationError(Exception):
     """A value cannot be safely canonicalized for signing (see SPEC.md §6)."""
@@ -70,7 +77,14 @@ def _reject_uncanonicalizable(value: Any, path: str = "$") -> None:
     two implementations might canonicalize differently can never be signed or
     accepted in the first place. This is the belt to JCS's suspenders.
     """
-    if value is None or isinstance(value, bool | int):  # bool is an int subclass; both allowed
+    if value is None or isinstance(value, bool):
+        return
+    if isinstance(value, int):
+        if abs(value) > MAX_SAFE_INTEGER:
+            raise CanonicalizationError(
+                f"integer {value} at {path} exceeds 2^53-1: not exactly representable as an "
+                f"IEEE 754 double, so RFC 8785 cannot canonicalize it unambiguously"
+            )
         return
     if isinstance(value, str):
         if not value.isascii():
@@ -103,7 +117,13 @@ def canonical_json(payload: dict[str, Any]) -> bytes:
     make a signature portable across implementations.
     """
     _reject_uncanonicalizable(payload)
-    canonical: bytes = jcs.canonicalize(payload)
+    try:
+        canonical: bytes = jcs.canonicalize(payload)
+    except (ValueError, TypeError) as exc:
+        # The guard above is meant to be exhaustive; if the JCS library still
+        # refuses a value, surface it as the package's own error rather than a
+        # raw traceback from a dependency (a verifier must fail closed, cleanly).
+        raise CanonicalizationError(f"JCS canonicalization refused the payload: {exc}") from exc
     return canonical
 
 
@@ -300,6 +320,19 @@ def sign_envelope(
     }
 
 
+def derive_exit_status(*, failed: int, errored: int = 0, xfailed: int = 0) -> int:
+    """Process-style exit status for a run: 0 iff it is a passing run.
+
+    A run is passing only when nothing failed, nothing errored (a test that could
+    not even run did not exercise its part of the corpus), and nothing xfailed
+    (an expected failure is a failure laundered into drift). This is exactly the
+    set the verifier's pass gate rejects (SPEC.md §9 step 11), so the producer and
+    the verifier agree on what "exit 0" means. Until 0.4.0 this looked at
+    ``failed`` alone, so ``errored=2`` produced a badge claiming ``exit_status=0``.
+    """
+    return 0 if failed == 0 and errored == 0 and xfailed == 0 else 1
+
+
 def build_badge(
     runtime: str,
     *,
@@ -323,10 +356,12 @@ def build_badge(
     The turnkey generator: given the counts — and, when known, the *identities*
     of the skipped vectors (``skipped_vectors``) and run provenance
     (``extensions``, e.g. from :func:`run_extensions`) — produce the signed
-    envelope a runtime ships. ``exit_status`` is derived (0 iff ``failed == 0``);
-    ``signed_at`` defaults to ``completed_at``. Recording *which* vectors were
-    skipped is what lets a relying party tell a fully-run badge from one that
-    skipped the adversarial cases (SPEC.md §5.2, §9).
+    envelope a runtime ships. ``exit_status`` is derived by :func:`derive_exit_status`
+    (0 iff ``failed == errored == xfailed == 0`` — the same rule the verifier's
+    pass gate applies, so a generated badge can never claim exit 0 for a run the
+    verifier would refuse); ``signed_at`` defaults to ``completed_at``. Recording
+    *which* vectors were skipped is what lets a relying party tell a fully-run
+    badge from one that skipped the adversarial cases (SPEC.md §5.2, §9).
     """
     payload: dict[str, Any] = {
         "schema_version": 1,
@@ -334,7 +369,7 @@ def build_badge(
         "protocol_versions": list(protocol_versions),
         "suite_digest": suite_digest,
         "completed_at": completed_at,
-        "exit_status": 0 if failed == 0 else 1,
+        "exit_status": derive_exit_status(failed=failed, errored=errored, xfailed=xfailed),
         "passed": passed,
         "failed": failed,
         "skipped": skipped,
@@ -356,7 +391,15 @@ class VerificationError(Exception):
 
 
 def verify_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
-    """Verify a signed envelope. Returns the payload on success; raises otherwise."""
+    """Verify a signed envelope's signature and shape. Returns the payload; raises otherwise.
+
+    **This is the low-level primitive, not a pass gate.** It proves the payload was
+    signed by ``signed_by`` and is schema-valid — nothing about the run result. A
+    badge recording ``failed: 99`` verifies here (THREATMODEL.md T2). To admit a
+    badge as *conformant*, call :func:`sm_conformance.verify.verify_badge`, which
+    applies the SPEC.md §9 gates (pass gate, freshness, corpus pin, skip policy, ...)
+    on top of this check.
+    """
     for field in ("payload", "signed_by", "signed_at", "signature"):
         if field not in envelope:
             raise VerificationError(f"envelope missing required field: {field}")

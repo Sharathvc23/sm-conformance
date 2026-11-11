@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.4.0 — Audit 2026-11: future-timestamp guard, library pass gate, errored exit status, canonicalization errors
+
+Four confirmed audit findings, each a promise the docs made that the code did not keep.
+
+- **Future-skew guard (THREATMODEL T5).** T5 said forward-dated badges were defended by a
+  "clock-skew guard (reject future timestamps)"; none existed — a badge with `completed_at`
+  400 days in the future passed `--max-age-days 30` (and would have for 430 days). The
+  verifier now rejects `completed_at` (signed), `signed_at` and `countersigned_at` more than
+  `max_future_skew_s` (default **300 s**) ahead of its clock, **on by default**. CLI:
+  `--max-future-skew-s SECONDS`; library: `max_future_skew_s=` (`None` disables).
+- **Library-level pass gate: `verify_badge()`.** Every SPEC §9 gate lived only in the CLI;
+  `verify_envelope()` returned the payload of a `failed=3` badge and a library caller had to
+  re-derive the gates by hand (T2's "silent footgun", left in place). New
+  `sm_conformance.verify.verify_badge(envelope, *, allow_failures=False, expected_suite_digest=None,
+  expected_total_vectors=None, require_total_vectors=False, max_skipped=None, forbid_skip=None,
+  require_skip_ids=False, expected_build=None, expected_code_digest=None, max_age_days=None,
+  max_future_skew_s=300, require_countersigned=False, require_method=None, trusted_signers=None,
+  now=None) -> BadgeVerdict` is the one implementation; the CLI calls it. `BadgeVerdict.gates`
+  records which checks actually ran. `verify_envelope` / `verify_countersigned` remain the
+  signature+schema primitives and are now documented as **not a pass gate**.
+- **`build_badge` exit status.** `exit_status` derived from `failed` alone, so `errored=2`
+  (or `xfailed=2`) produced a badge claiming exit 0 — contradicting the verifier's own gate.
+  New `derive_exit_status(failed=, errored=, xfailed=)`: 0 iff all three are 0.
+- **Big integers.** Ints with |n| > 2^53−1 escaped `_reject_uncanonicalizable` and surfaced
+  as a raw `jcs` `ValueError` traceback. They are now rejected as `CanonicalizationError`
+  (→ `VerificationError` on the verify path) with a clear message, and any residual JCS
+  refusal is wrapped the same way. New cross-language vectors: `max-safe-integer-boundary`
+  (valid), `integer-above-2^53` / `integer-below-negative-2^53` (invalid).
+
+**Breaking (module path only):** the CLI module moved from `sm_conformance.verify_badge` to
+`sm_conformance.cli` — a submodule named `verify_badge` shadows the `verify_badge` function
+the moment it is imported. The `sm-verify-badge` console script is unchanged; `python -m
+sm_conformance badge.json` is new. Badge wire format and `schema_version` are unchanged; every
+0.1.0 badge still verifies.
+
+Docs: SPEC §5.2 (exit_status), §6 (integer bound), §9 (future-skew step, `verify_badge`),
+§12.1; THREATMODEL T2/T5 and checklist now name checks that exist in code; README test
+count corrected (said 74, suite has 142). Package root now also exports `build_badge`,
+`derive_exit_status`, `CanonicalizationError`, `compute_code_digest`, `BadgeVerdict`,
+`DEFAULT_MAX_FUTURE_SKEW_S`, `MAX_SAFE_INTEGER`, `RUN_BUILD_KEY`, `SUITE_CODE_DIGEST_KEY`.
+
 ## v0.3.2 — fix `__version__` string
 
 - `sm_conformance.__version__` reported `0.1.0` while the published package was

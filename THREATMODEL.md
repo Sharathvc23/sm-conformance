@@ -26,7 +26,9 @@ actually conforms."** Read the whole model through that lens.
 
 **Trusted computing base (TCB)** — security reduces to the correctness of:
 - the Ed25519 implementation,
-- the **JCS canonicalization** (RFC 8785) used to compute the signed bytes,
+- the **JCS canonicalization** (RFC 8785) used to compute the signed bytes, and the
+  value-space guard in front of it (ASCII strings, integers with |n| ≤ 2^53−1, booleans,
+  null),
 - the JSON Schema validator (with `additionalProperties: false`),
 - and the RP's out-of-band mapping of `suite_digest → "what this suite means"`.
 
@@ -52,10 +54,10 @@ Ordered roughly cheapest-first.
 | # | Attack | Defended by | Residual risk |
 |---|---|---|---|
 | **T1** | **Self-attestation.** Anyone mints a `did:key` and signs `passed:50, failed:0`. | rung-2 lab counter-signature; out-of-band reputation of `K` | a rung-1 badge *alone* proves nothing about reality — trusting it equals trusting a stranger's self-report |
-| **T2** | **"Verifies ≠ passed."** `verify_envelope` checks signature + schema, **not** the run result; a `failed:99` badge is a *valid* badge. | RP gates `failed / exit_status / errored / xfailed == 0` | a silent footgun: any RP that treats "verified" as "conformant" is fooled |
+| **T2** | **"Verifies ≠ passed."** `verify_envelope` checks signature + schema, **not** the run result; a `failed:99` badge is a *valid* badge. | `verify_badge()` (library, and the CLI over it) refuses `failed / exit_status / errored / xfailed != 0` unless `allow_failures` is passed explicitly | an RP that bypasses `verify_badge` and calls the primitive directly is still fooled; the primitive's docstring now says so |
 | **T3** | **Weak-suite substitution.** Pass a trivial suite and present it as the real one. | pin `expected_suite_digest`; pin `code_digest` (`--expected-code-digest`) to defend a suite that "tests nothing" | the `digest → meaning` map must be known to the RP out of band |
 | **T4** | **Skip the adversarial vectors.** Report high `passed` while quietly `skipped`-ing the hard ones. | `skipped_vectors` + `total_vectors` completeness + skip policy (`--max-skipped`, `--forbid-skip`, `--require-skip-ids`) | only bites if the RP enforces the policy *and* knows the expected total |
-| **T5** | **Replay / regression / time-lying.** A static badge is re-presented after `R` regresses; or the runtime back-dates / **forward-dates** `completed_at`. | freshness bound on the **signed** `completed_at`; clock-skew guard (reject future timestamps); prefer a `lab-rerun` countersignature for recency | **fundamental, not merely residual:** `completed_at` is self-asserted — the runtime stamps its own clock. Only a `lab-rerun`'s independent timestamp constrains it. There is **no revocation** to pull a known-bad badge (see T6). |
+| **T5** | **Replay / regression / time-lying.** A static badge is re-presented after `R` regresses; or the runtime back-dates / **forward-dates** `completed_at`. | freshness bound on the **signed** `completed_at` (`max_age_days`); the **future-skew guard**, on by default (`max_future_skew_s` / `--max-future-skew-s`, default 300 s), rejects `completed_at`, `signed_at` or `countersigned_at` ahead of the verifier's clock; prefer a `lab-rerun` countersignature for recency | **fundamental, not merely residual:** `completed_at` is self-asserted — the runtime stamps its own clock. Only a `lab-rerun`'s independent timestamp constrains it. There is **no revocation** to pull a known-bad badge (see T6). |
 | **T6** | **Key compromise / rotation.** A leaked seed lets an attacker mint badges as `R`; and after a legitimate rotation, badges from the *old* key remain cryptographically valid for their `completed_at` window. | custody discipline; rotate keys; RP tracks the runtime's **key history** | **no in-protocol revocation/CRL.** RPs must decide a grandfathering policy (accept old-key badges within their freshness window vs. hard-cut at the rotation time). RPs on stale key lists stay exposed. |
 | **T7** | **Rung-2 over-attestation.** A lab counter-signs without gating, or `method:"verified"` is misread as a re-run. | lab must apply the same admission gates before stamping; RP must know what a given lab's stamp *means* | trust in rung-2 = trust in that lab's key **and** its policy; `"verified"` carries **no fresh signed timestamp** beyond the inner `completed_at` |
 | **T8** | **Canonicalization divergence.** Two verifiers canonicalize differently → a payload that verifies-and-means differently across implementations. | shared cross-language JCS vectors (authoring them caught a real non-ASCII-key bug in 0.3.0); strict schema | every new language port is new TCB surface |
@@ -95,9 +97,13 @@ The practical distillation. The Town Notary
 (<https://github.com/Sharathvc23/town-notary>) implements steps 1–6 server-side and is a
 working reference for consuming these badges.
 
-1. **Verify** signature + schema with `verify_envelope` / `verify_countersigned`.
-2. **Gate the result:** require `failed == 0`, `exit_status == 0`, `errored == 0`,
-   `xfailed == 0`. (Verification ≠ conformance — T2.)
+1. **Verify and gate with `verify_badge`** (or the `sm-verify-badge` CLI, which wraps
+   it). It performs signature + schema verification *and* every gate below in one
+   call; `verify_envelope` / `verify_countersigned` alone are signature primitives
+   and admit a failing run.
+2. **Gate the result:** `verify_badge` requires `failed == 0`, `exit_status == 0`,
+   `errored == 0`, `xfailed == 0` unless you pass `allow_failures=True`. (Verification
+   ≠ conformance — T2.)
 3. **Pin the suite:** require `suite_digest == expected`, ideally also `code_digest`
    (`--expected-code-digest`), **and a minimum suite version** so a patched/strengthened
    suite is not satisfied by an old weaker digest (T3, T10). If the badge carries no
@@ -111,10 +117,13 @@ working reference for consuming these badges.
 6. **Establish recency (strongest signal first):**
    - **Preferred:** require a rung-2 `method:"lab-rerun"` — an independently timestamped
      re-run is a stronger freshness guarantee than any self-asserted age check.
-   - **Otherwise:** bound the age of the **signed** `completed_at` (`--max-age-days`),
-     **and** reject any badge whose `completed_at` is more than a small skew (e.g. a few
-     minutes) **in the future**, defending against forward-dated badges as well as stale
-     ones (T5). Never gate freshness on the unsigned `countersigned_at` (`SPEC.md` §12.1).
+   - **Otherwise:** bound the age of the **signed** `completed_at` (`max_age_days` /
+     `--max-age-days`). The future-skew guard is already on: `verify_badge` rejects any
+     badge whose `completed_at`, `signed_at` or `countersigned_at` is more than
+     `max_future_skew_s` (default 300 s) **in the future**, defending against
+     forward-dated badges as well as stale ones (T5); tighten or loosen it to match your
+     clock discipline. Never gate freshness on the unsigned `countersigned_at`
+     (`SPEC.md` §12.1).
 
 > Steps 1–4 are local and cheap; step 5 is where policy and out-of-band knowledge enter;
 > step 6 is where most implementers under-reach — prefer a `lab-rerun` over a bare

@@ -12,8 +12,9 @@ re-verify — without this package knowing anything about the protocol under tes
 from __future__ import annotations
 
 from sm_conformance import (
+    build_badge,
     derive_did_key,
-    sign_envelope,
+    verify_badge,
     verify_envelope,
 )
 
@@ -32,29 +33,28 @@ def main() -> None:
     seed = bytes(range(32))
     signed_at = "2026-05-31T00:00:00+00:00"
 
-    payload = {
-        "schema_version": 1,
-        "runtime": "echo-demo",
-        "protocol_versions": ["0.1"],
+    badge = build_badge(
+        "echo-demo",
+        signing_key32=seed,
         # A real suite digests its vector corpus; the toy suite has none.
-        "suite_digest": "sha256:" + "0" * 64,
-        "completed_at": signed_at,
-        "exit_status": 0 if failed == 0 else 1,
-        "passed": passed,
-        "failed": failed,
-        "skipped": 0,
-        "xfailed": 0,
-        "xpassed": 0,
-    }
-
-    badge = sign_envelope(payload, seed, signed_at)
+        suite_digest="sha256:" + "0" * 64,
+        protocol_versions=["0.1"],
+        completed_at=signed_at,
+        passed=passed,
+        failed=failed,
+        total_vectors=passed + failed,
+    )
     print("signed by:", badge["signed_by"])
     print("derived  :", derive_did_key(bytes(range(32)))[:24] + "...")
 
-    # Any holder of the did:key can do this, offline, with no service.
-    verified = verify_envelope(badge)
-    print(f"verified : {verified['passed']} passed, {verified['failed']} failed")
-    assert verified == payload
+    # Any holder of the did:key can do this, offline, with no service. verify_badge
+    # is the admission gate: signature + schema + pass gate + freshness guard.
+    verdict = verify_badge(badge)
+    print(f"verdict  : {verdict.payload['passed']} passed, gates={','.join(verdict.gates)}")
+
+    # verify_envelope is the primitive underneath — signature + shape only. It would
+    # also return the payload of a FAILING run; never stop there when admitting.
+    assert verify_envelope(badge) == verdict.payload
 
 
 if __name__ == "__main__":

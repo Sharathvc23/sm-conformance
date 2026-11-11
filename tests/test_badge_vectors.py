@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from sm_conformance.badge import VerificationError, sign_envelope, verify_envelope
-from sm_conformance.verify_badge import main as verify_badge_main
+from sm_conformance.cli import main as verify_badge_main
 
 VECTORS_DIR = Path(__file__).resolve().parent / "fixtures"
 
