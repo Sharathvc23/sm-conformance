@@ -337,3 +337,36 @@ def test_canonical_json_wraps_residual_jcs_errors(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(badge_mod.jcs, "canonicalize", _boom)
     with pytest.raises(CanonicalizationError, match="JCS canonicalization refused"):
         canonical_json({"ok": 1})
+
+
+# --- audit 2026-11 #3: exit_status derives from failed OR errored OR xfailed ---
+
+
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"passed": 44, "errored": 2},
+        {"passed": 44, "xfailed": 2},
+        {"passed": 44, "failed": 2},
+        {"passed": 42, "failed": 1, "errored": 1, "xfailed": 2},
+    ],
+    ids=["errored", "xfailed", "failed", "mixed"],
+)
+def test_build_badge_exit_status_is_nonzero_for_any_non_passing_bucket(
+    over: dict[str, int],
+) -> None:
+    """``errored=2`` used to yield ``exit_status=0`` because only ``failed`` was
+    consulted — a generated badge that claimed a clean exit for a run the
+    verifier's own pass gate refuses. The producer and verifier now share one rule."""
+    env = _badge(**over)
+    assert env["payload"]["exit_status"] == 1
+
+
+def test_build_badge_exit_status_zero_only_for_passing_run() -> None:
+    from sm_conformance.badge import derive_exit_status
+
+    assert _badge()["payload"]["exit_status"] == 0
+    assert _badge(skipped=3, total_vectors=49, xpassed=1)["payload"]["exit_status"] == 0
+    assert derive_exit_status(failed=0) == 0
+    assert derive_exit_status(failed=0, errored=1) == 1
+    assert derive_exit_status(failed=0, xfailed=1) == 1

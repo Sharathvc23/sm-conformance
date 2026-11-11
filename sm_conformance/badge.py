@@ -320,6 +320,19 @@ def sign_envelope(
     }
 
 
+def derive_exit_status(*, failed: int, errored: int = 0, xfailed: int = 0) -> int:
+    """Process-style exit status for a run: 0 iff it is a passing run.
+
+    A run is passing only when nothing failed, nothing errored (a test that could
+    not even run did not exercise its part of the corpus), and nothing xfailed
+    (an expected failure is a failure laundered into drift). This is exactly the
+    set the verifier's pass gate rejects (SPEC.md §9 step 11), so the producer and
+    the verifier agree on what "exit 0" means. Until 0.4.0 this looked at
+    ``failed`` alone, so ``errored=2`` produced a badge claiming ``exit_status=0``.
+    """
+    return 0 if failed == 0 and errored == 0 and xfailed == 0 else 1
+
+
 def build_badge(
     runtime: str,
     *,
@@ -343,10 +356,12 @@ def build_badge(
     The turnkey generator: given the counts — and, when known, the *identities*
     of the skipped vectors (``skipped_vectors``) and run provenance
     (``extensions``, e.g. from :func:`run_extensions`) — produce the signed
-    envelope a runtime ships. ``exit_status`` is derived (0 iff ``failed == 0``);
-    ``signed_at`` defaults to ``completed_at``. Recording *which* vectors were
-    skipped is what lets a relying party tell a fully-run badge from one that
-    skipped the adversarial cases (SPEC.md §5.2, §9).
+    envelope a runtime ships. ``exit_status`` is derived by :func:`derive_exit_status`
+    (0 iff ``failed == errored == xfailed == 0`` — the same rule the verifier's
+    pass gate applies, so a generated badge can never claim exit 0 for a run the
+    verifier would refuse); ``signed_at`` defaults to ``completed_at``. Recording
+    *which* vectors were skipped is what lets a relying party tell a fully-run
+    badge from one that skipped the adversarial cases (SPEC.md §5.2, §9).
     """
     payload: dict[str, Any] = {
         "schema_version": 1,
@@ -354,7 +369,7 @@ def build_badge(
         "protocol_versions": list(protocol_versions),
         "suite_digest": suite_digest,
         "completed_at": completed_at,
-        "exit_status": 0 if failed == 0 else 1,
+        "exit_status": derive_exit_status(failed=failed, errored=errored, xfailed=xfailed),
         "passed": passed,
         "failed": failed,
         "skipped": skipped,
