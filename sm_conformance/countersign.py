@@ -97,9 +97,11 @@ def verify_countersigned(envelope: dict[str, Any]) -> dict[str, Any]:
     counter-signature over the wrapping payload. Returns the inner badge's
     run-result payload on success; raises ``CountersignError`` otherwise.
 
-    Like ``verify_envelope``, this checks signatures only — the pass-gate
-    (``failed == 0``) is applied by the verifier CLI, against the returned
-    inner payload.
+    Like ``verify_envelope``, this checks signatures and shape only — it is
+    **not a pass gate**. The admission gates (pass gate, freshness, corpus pin,
+    rung-2 method/signer policy) are applied by
+    :func:`sm_conformance.verify.verify_badge`, which calls this and gates the
+    returned inner payload; the CLI is a front-end to that function.
     """
     for field in ("payload", "countersigned_by", "countersigned_at", "countersignature"):
         if field not in envelope:

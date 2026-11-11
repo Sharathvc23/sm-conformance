@@ -34,7 +34,7 @@ dev = [
 ]
 
 [project.scripts]
-sm-verify-badge = "sm_conformance.verify_badge:main"
+sm-verify-badge = "sm_conformance.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sm_conformance"]
@@ -62,7 +62,8 @@ source = ["sm_conformance"]
 # The vector generator is a dev tool that re-emits the reference fixtures; the
 # determinism test exercises its inputs, but its file-writing main path is not
 # part of the verified runtime surface.
-omit = ["sm_conformance/_badge_vector_gen.py"]
+# __main__.py is the `python -m sm_conformance` shim over cli.main, which is covered.
+omit = ["sm_conformance/_badge_vector_gen.py", "sm_conformance/__main__.py"]
 
 [tool.coverage.report]
 show_missing = true

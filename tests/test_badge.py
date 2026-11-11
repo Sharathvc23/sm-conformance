@@ -26,7 +26,7 @@ from sm_conformance.badge import (
     sign_envelope,
     verify_envelope,
 )
-from sm_conformance.verify_badge import main as verify_badge_main
+from sm_conformance.cli import main as verify_badge_main
 
 
 @pytest.fixture

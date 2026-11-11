@@ -391,7 +391,15 @@ class VerificationError(Exception):
 
 
 def verify_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
-    """Verify a signed envelope. Returns the payload on success; raises otherwise."""
+    """Verify a signed envelope's signature and shape. Returns the payload; raises otherwise.
+
+    **This is the low-level primitive, not a pass gate.** It proves the payload was
+    signed by ``signed_by`` and is schema-valid — nothing about the run result. A
+    badge recording ``failed: 99`` verifies here (THREATMODEL.md T2). To admit a
+    badge as *conformant*, call :func:`sm_conformance.verify.verify_badge`, which
+    applies the SPEC.md §9 gates (pass gate, freshness, corpus pin, skip policy, ...)
+    on top of this check.
+    """
     for field in ("payload", "signed_by", "signed_at", "signature"):
         if field not in envelope:
             raise VerificationError(f"envelope missing required field: {field}")
