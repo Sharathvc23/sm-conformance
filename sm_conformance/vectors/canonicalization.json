@@ -56,6 +56,14 @@
         "suite": "sha256:aaaaaaaa"
       },
       "canonical": "{\"runtime\":\"sm-chapter\",\"suite\":\"sha256:aaaaaaaa\"}"
+    },
+    {
+      "id": "max-safe-integer-boundary",
+      "input": {
+        "hi": 9007199254740991,
+        "lo": -9007199254740991
+      },
+      "canonical": "{\"hi\":9007199254740991,\"lo\":-9007199254740991}"
     }
   ],
   "invalid": [
@@ -86,6 +94,20 @@
         "\u00e9": 1
       },
       "reason": "non-ASCII object key"
+    },
+    {
+      "id": "integer-above-2^53",
+      "input": {
+        "v": 9007199254740993
+      },
+      "reason": "integers with |n| > 2^53-1 are not exactly representable as IEEE 754 doubles; RFC 8785 section 3.1 cannot serialize them unambiguously"
+    },
+    {
+      "id": "integer-below-negative-2^53",
+      "input": {
+        "v": -9007199254740993
+      },
+      "reason": "same bound on the negative side"
     }
   ]
 }

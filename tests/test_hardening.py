@@ -299,3 +299,41 @@ def test_expected_code_digest_gate() -> None:
     for path in _badge_file(env):
         assert verify_badge_main([path, "--expected-code-digest", cd]) == 0
         assert verify_badge_main([path, "--expected-code-digest", "sha256:" + "d" * 64]) == 1
+
+
+# --- audit 2026-11 #4: big integers are rejected as CanonicalizationError -----
+
+
+def test_canonical_json_rejects_integer_above_2_53() -> None:
+    """RFC 8785 serializes numbers as IEEE 754 doubles; an int above 2^53-1 is
+    not exactly representable, so two JCS implementations may disagree on its
+    digits. Before this guard the jcs library raised a raw ValueError that
+    escaped ``verify_envelope`` as a traceback instead of a clean refusal."""
+    with pytest.raises(CanonicalizationError, match="exceeds 2\\^53-1"):
+        canonical_json(_payload(passed=2**53 + 1))
+    with pytest.raises(CanonicalizationError, match="exceeds 2\\^53-1"):
+        canonical_json(_payload(passed=-(2**53) - 1))
+    # The boundary itself is in the value space.
+    assert canonical_json({"v": 2**53 - 1}) == b'{"v":9007199254740991}'
+
+
+def test_verify_envelope_rejects_big_integer_as_verification_error() -> None:
+    """A tampered badge carrying a huge count must fail closed with the package's
+    own error type, not leak the dependency's ValueError to the caller."""
+    env = sign_envelope(_payload(), _seed(), SIGNED_AT)
+    env["payload"]["passed"] = 2**63
+    with pytest.raises(VerificationError, match="not canonicalizable"):
+        verify_envelope(env)
+
+
+def test_canonical_json_wraps_residual_jcs_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Belt and suspenders: if the JCS library ever refuses a value the guard let
+    through, the caller still sees CanonicalizationError, never a raw ValueError."""
+    import sm_conformance.badge as badge_mod
+
+    def _boom(_: Any) -> bytes:
+        raise ValueError("synthetic jcs refusal")
+
+    monkeypatch.setattr(badge_mod.jcs, "canonicalize", _boom)
+    with pytest.raises(CanonicalizationError, match="JCS canonicalization refused"):
+        canonical_json({"ok": 1})

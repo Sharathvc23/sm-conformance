@@ -56,6 +56,13 @@ from referencing.jsonschema import DRAFT202012
 
 ED25519_MULTICODEC_PREFIX = b"\xed\x01"
 
+# RFC 8785 §3.1 serializes numbers as IEEE 754 doubles, so an integer is only
+# canonical when it is exactly representable as one: |n| <= 2^53 - 1 (ECMAScript's
+# Number.MAX_SAFE_INTEGER). Beyond that, two conformant JCS implementations may
+# emit different digit strings for the same Python int, so such a value is outside
+# the signed value space — rejected up front, like a float.
+MAX_SAFE_INTEGER = 2**53 - 1
+
 
 class CanonicalizationError(Exception):
     """A value cannot be safely canonicalized for signing (see SPEC.md §6)."""
@@ -70,7 +77,14 @@ def _reject_uncanonicalizable(value: Any, path: str = "$") -> None:
     two implementations might canonicalize differently can never be signed or
     accepted in the first place. This is the belt to JCS's suspenders.
     """
-    if value is None or isinstance(value, bool | int):  # bool is an int subclass; both allowed
+    if value is None or isinstance(value, bool):
+        return
+    if isinstance(value, int):
+        if abs(value) > MAX_SAFE_INTEGER:
+            raise CanonicalizationError(
+                f"integer {value} at {path} exceeds 2^53-1: not exactly representable as an "
+                f"IEEE 754 double, so RFC 8785 cannot canonicalize it unambiguously"
+            )
         return
     if isinstance(value, str):
         if not value.isascii():
@@ -103,7 +117,13 @@ def canonical_json(payload: dict[str, Any]) -> bytes:
     make a signature portable across implementations.
     """
     _reject_uncanonicalizable(payload)
-    canonical: bytes = jcs.canonicalize(payload)
+    try:
+        canonical: bytes = jcs.canonicalize(payload)
+    except (ValueError, TypeError) as exc:
+        # The guard above is meant to be exhaustive; if the JCS library still
+        # refuses a value, surface it as the package's own error rather than a
+        # raw traceback from a dependency (a verifier must fail closed, cleanly).
+        raise CanonicalizationError(f"JCS canonicalization refused the payload: {exc}") from exc
     return canonical
 
 
