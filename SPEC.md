@@ -2,7 +2,7 @@
 
 **Version (wire):** `sm-conformance/0.1`
 **Status:** Working Draft. Reviewable, not yet frozen.
-**Last updated:** 2026-05-31
+**Last updated:** 2026-11-11
 
 > **Source of truth.** When an implementation disagrees with this specification,
 > the implementation is wrong by definition. Behaviour changes require a PR to
@@ -152,6 +152,11 @@ accounting and `failed == 0`. When `skipped > 0` a producer **SHOULD** enumerate
 `skipped_vectors` (length equal to `skipped`), and a relying party gates on it
 (§9: `--max-skipped`, `--forbid-skip`, `--require-skip-ids`).
 
+`exit_status` is the process-style status of the run: a producer **MUST** emit `0`
+only when `failed == errored == xfailed == 0` — the same predicate the verifier's
+pass gate (§9 step 11) applies — and non-zero otherwise. The reference generator
+derives it with `derive_exit_status`. (Until 0.4.0 it looked at `failed` alone.)
+
 `extensions.conformance.run.build` (string) records **which build** of the runtime
 was tested — a commit SHA, image digest, or version. `suite_digest` pins the *suite
 corpus*, not the runtime, so without this an auditor cannot answer "which build
@@ -162,9 +167,13 @@ asserts it with `--expected-build`.
 The signature is over the UTF-8 bytes of `canonical_json(payload)`, computed by
 **RFC 8785 (JCS)**. The signed value space is **constrained**: a payload **MUST**
 contain only ASCII strings, integers, booleans, null, and nested objects/arrays of
-the same. A value outside this space (a float, a non-ASCII string, raw bytes)
-**MUST** be rejected — on both the sign and the verify paths — before any signature
-is computed or checked. The constraint is what makes the encoding unambiguous: two
+the same. Integers **MUST** satisfy |n| ≤ 2^53 − 1: RFC 8785 §3.1 serializes numbers
+as IEEE 754 doubles, and a larger integer is not exactly representable, so two
+implementations may emit different digits for it. A value outside this space (a
+float, an out-of-range integer, a non-ASCII string, raw bytes) **MUST** be rejected —
+on both the sign and the verify paths, as the implementation's own canonicalization
+error rather than a lower-level library failure — before any signature is computed
+or checked. The constraint is what makes the encoding unambiguous: two
 conformant implementations (this library and the `arp` receipt suite use the same
 JCS library) produce byte-identical canonical bytes for every admissible payload,
 so a signature is portable across them. Rejecting the rest is not a limitation but
@@ -216,12 +225,24 @@ policy — fail if `skipped > --max-skipped`, if any `--forbid-skip` ID is in
 `skipped_vectors`; (9) if `--expected-build` was supplied, confirm
 `extensions.conformance.run.build` equals it; (10) if `--max-age-days` was supplied,
 confirm the **signed `completed_at`** (never the unsigned `countersigned_at`, §12.1)
-is within the bound; (11) unless signature-only mode is requested, reject a payload
-recording `failed != 0`, `exit_status != 0`, `xfailed != 0`, or `errored != 0`.
+is within the bound, **and in every case** reject a badge whose `completed_at`,
+`signed_at` or (if present) `countersigned_at` lies more than a small skew
+(`--max-future-skew-s`, default **300 s**) ahead of the verifier's clock — a
+forward-dated badge would otherwise satisfy any age bound indefinitely; (11) unless
+signature-only mode is requested, reject a payload recording `failed != 0`,
+`exit_status != 0`, `xfailed != 0`, or `errored != 0`.
 Schema validation (5) runs **after**
 signature verification (4): the verifier authenticates the bytes, then enforces their
 structure. Each negative vector in `tests/fixtures/` fixes the stage at which a
 malformed badge **MUST** fail.
+
+Steps (1)–(5) are the *signature primitive* (`verify_envelope`, and for rung 2
+`verify_countersigned`); they prove who signed and that the shape is valid, nothing
+about the run result. Steps (6)–(11) and the §12.2 admission gates are the *pass
+gate*. The reference implementation exposes both as **one** function,
+`sm_conformance.verify_badge(envelope, …) -> BadgeVerdict`, which the
+`sm-verify-badge` CLI wraps; a library consumer **MUST** use it (or re-implement the
+whole of §9), not stop at the primitive — a `failed: 99` badge verifies at step (5).
 
 ### 9.1 Locked-down invocation
 For registry admission of an untrusted runtime, all gates **SHOULD** be on at once —
@@ -236,11 +257,15 @@ sm-verify-badge badge.json \
   --require-countersigned --require-method lab-rerun --trusted-signer did:key:z<lab>
 ```
 
+(The future-skew guard needs no flag — it is on by default; `--max-future-skew-s`
+only tunes the tolerance.)
+
 A self-signed badge with only `--expected-suite-digest` is **non-repudiation + a
 stable reference**, not proof a run happened (§3, §11).
 
 ## 10. Verifier output
-On success the verifier reports the signer, runtime, versions, and counts, exit 0.
+On success the verifier reports the signer, runtime, versions, counts, and the list
+of gates that were applied, exit 0.
 On failure it reports the failing stage, exit 1. Malformed input (not found / not
 JSON) is exit 2.
 
@@ -281,9 +306,9 @@ A verifier given a counter-signed envelope **MUST**:
 
 1. Verify the inner `payload.badge` as a badge per §9 (the runtime's own signature). Reject if it fails.
 2. Recover the lab public key from `countersigned_by` (`did:key`, §9.2) and verify `countersignature` over `canonical_json(payload)`. Reject if it fails.
-3. Apply the pass-gate (§9.7) to the **inner** badge payload.
+3. Apply the pass gate and freshness/skew checks (§9 steps 10–11) to the **inner** badge payload, and the §12.2 admission gates to the wrapper.
 
-Like the badge's `signed_at`, `countersigned_at` sits outside the signed payload, so it is **forgeable**: a holder can set it to any value without invalidating the countersignature. A relying party **MUST NOT** gate freshness on `countersigned_at`. Freshness, if required, **MUST** be taken from a **signed** timestamp — the inner badge's `completed_at` (which `verify_countersigned` returns and `--max-age-days` reads). Note that a `method: "verified"` counter-sign (the lab confirmed the inner signature and counts without re-running) carries **no fresh signed timestamp of its own** beyond that inner `completed_at`, so it cannot support a freshness claim newer than the original run; only `lab-rerun` re-stamps a recent run.
+Like the badge's `signed_at`, `countersigned_at` sits outside the signed payload, so it is **forgeable**: a holder can set it to any value without invalidating the countersignature. A relying party **MUST NOT** gate freshness on `countersigned_at` (it **SHOULD** still refuse a `countersigned_at` that lies in the future beyond the §9 skew — an honest lab never emits one, so a future value is an inconsistency, not evidence). Freshness, if required, **MUST** be taken from a **signed** timestamp — the inner badge's `completed_at` (which `verify_countersigned` returns and `--max-age-days` reads). Note that a `method: "verified"` counter-sign (the lab confirmed the inner signature and counts without re-running) carries **no fresh signed timestamp of its own** beyond that inner `completed_at`, so it cannot support a freshness claim newer than the original run; only `lab-rerun` re-stamps a recent run.
 
 Both signatures **MUST** verify. A relying party that trusts the `countersigned_by` lab thereby gains the lab's attestation that the inner badge is genuine — the assurance a self-signed badge cannot provide, and the rung registry admission requires for untrusted runtimes.
 

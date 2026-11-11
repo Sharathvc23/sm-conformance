@@ -23,11 +23,17 @@ bring those.
   merely flagged in a test.
 - **Corpus pinning.** `suite_digest` is a SHA-256 over the vector corpus, so a
   badge proves *which* suite ran; swapping in a weaker corpus changes the digest.
-- **Honest gating.** The verifier refuses a badge that records `failed > 0` or a
-  non-zero exit status unless you explicitly opt into signature-only mode.
+- **Honest gating — in the library, not just the CLI.** `verify_badge` refuses a
+  badge that records `failed`, `errored` or `xfailed > 0` or a non-zero
+  `exit_status` unless you explicitly opt into signature-only mode
+  (`allow_failures=True`), and rejects a badge whose `completed_at`, `signed_at`
+  or `countersigned_at` is more than a small skew (default 300 s) in the future —
+  a forward-dated badge would otherwise satisfy any age bound forever. The CLI is
+  a thin front-end to the same function, so the two cannot disagree.
 - **Adversarially tested.** Tampered payloads, tampered signatures, wrong signer,
-  non-`did:key` signer, missing fields, and pass-gate evasion are all covered by
-  golden vectors and unit tests (74 tests).
+  non-`did:key` signer, missing fields, pass-gate evasion, forward-dated
+  timestamps and out-of-range integers are all covered by golden vectors and unit
+  tests (142 tests).
 
 ## What this package does NOT do
 
@@ -42,15 +48,22 @@ bring those.
 
 ## Features
 
+- `verify_badge(envelope, …) -> BadgeVerdict` — **the admission gate**: signature +
+  schema + every SPEC §9 gate (pass gate, corpus pin, vector accounting, skip
+  policy, build/code-digest pins, freshness incl. the future-skew guard, rung-2
+  method/signer policy). `BadgeVerdict.gates` names the checks that actually ran.
 - `sign_envelope` / `verify_envelope` — build and check a signed badge.
+  `verify_envelope` is the signature+schema *primitive*; it is **not** a pass gate.
 - `build_badge(runtime, …)` — turnkey generator: assemble + sign a badge from a
-  test run's counts, the skipped-vector IDs, and run provenance.
+  test run's counts, the skipped-vector IDs, and run provenance. `exit_status` is
+  derived from `failed`, `errored` **and** `xfailed`, matching the verifier's gate.
 - `compute_suite_digest(path)` — pin a badge to a vector corpus (cross-platform stable).
 - `derive_did_key` / `parse_did_key` — W3C `did:key` (base58btc, multicodec `0xed01`).
 - `run_extensions(surface, target, build=…)` — namespaced run provenance incl. build.
 - `sm-verify-badge` CLI with admission gates: `--expected-suite-digest`,
   `--expected-total-vectors`, `--max-skipped` / `--forbid-skip` / `--require-skip-ids`,
-  `--expected-build`, `--max-age-days`, `--require-countersigned` (see SPEC §9.1).
+  `--expected-build`, `--max-age-days`, `--max-future-skew-s`,
+  `--require-countersigned` (see SPEC §9.1). Also `python -m sm_conformance`.
 - JSON Schemas for the envelope + counter-signed envelope (`sm_conformance/schema/`),
   enforced on the verify path.
 
@@ -72,22 +85,26 @@ pip install sm-conformance
 ## Quick start
 
 ```python
-from sm_conformance import sign_envelope, verify_envelope, compute_suite_digest
-
-payload = {
-    "schema_version": 1,
-    "runtime": "my-runtime",
-    "protocol_versions": ["0.1"],
-    "suite_digest": compute_suite_digest("vectors"),  # SHA-256 over your corpus
-    "completed_at": "2026-05-31T00:00:00+00:00",
-    "exit_status": 0,
-    "passed": 42, "failed": 0, "skipped": 0, "xfailed": 0, "xpassed": 0,
-}
+from sm_conformance import build_badge, compute_suite_digest, verify_badge
 
 seed = bytes(range(32))                      # your runtime's Ed25519 seed (32 bytes)
-badge = sign_envelope(payload, seed, "2026-05-31T00:00:00+00:00")
+badge = build_badge(
+    "my-runtime",
+    signing_key32=seed,
+    suite_digest=compute_suite_digest("vectors"),  # SHA-256 over your corpus
+    protocol_versions=["0.1"],
+    completed_at="2026-05-31T00:00:00+00:00",
+    passed=42, failed=0, skipped=0,          # exit_status is derived for you
+)
 
-verify_envelope(badge)                       # raises VerificationError if invalid
+# The admission gate: signature + schema + pass gate + freshness/skew guard, and
+# any pin you assert. Raises VerificationError if any gate refuses the badge.
+verdict = verify_badge(badge, expected_suite_digest=badge["payload"]["suite_digest"])
+print(verdict.gates)      # ('signature', 'suite_digest', 'future_skew', 'pass')
+
+# Low-level primitive — proves signature + shape ONLY; a failing run verifies here.
+from sm_conformance import verify_envelope
+verify_envelope(badge)
 ```
 
 ```bash
@@ -126,6 +143,6 @@ fixed test seeds, not production signers.
 
 ---
 
-*First published: 2026-05-31 | Last modified: 2026-05-31*
+*First published: 2026-05-31 | Last modified: 2026-11-11*
 
 *Personal research contributions aligned with [Project NANDA](https://projectnanda.org) standards. [Stellarminds.ai](https://stellarminds.ai)*
